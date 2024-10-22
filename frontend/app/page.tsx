@@ -2,6 +2,7 @@
 import 'semantic-ui-css/semantic.min.css';
 import { Header, Tab } from "semantic-ui-react";
 import PageGenerateKeyPair from "./pages/PageGenerateKeyPair";
+import PageStartVote from './pages/PageStartVote';
 
 
 
@@ -15,7 +16,8 @@ const Main: React.FC<{}> = ()=>{
     <Tab renderActiveOnly={false} panes={[
             {menuItem:"Generating KeyPair",pane:<Tab.Pane key={1}>
                 <PageGenerateKeyPair></PageGenerateKeyPair>
-            </Tab.Pane>}
+            </Tab.Pane>},
+            {menuItem:"Start a vote",pane:<Tab.Pane key={2}><PageStartVote></PageStartVote></Tab.Pane>}
     ]}></Tab>
 
   </div>;

@@ -1,24 +1,26 @@
 import { useState } from "react";
-import { Button, Dimmer, Loader } from "semantic-ui-react";
-import * as asn1js from "asn1js";
-import { PrivateKeyInfo, RSAPrivateKey } from "pkijs";
+import { Button, Dimmer, Divider, Form, Loader, Message } from "semantic-ui-react";
 
 
-const extractPQEDFromPrivateKey = async (privateKey: CryptoKey): Promise<{ p: BigInt, q: BigInt, e: BigInt; d: BigInt }> => {
-    const pkcs8 = await crypto.subtle.exportKey("pkcs8", privateKey);
+function convertNumber(input: string): bigint {
+    return BigInt("0x00" + Buffer.from(input, "base64").toString("hex"))
+}
+const extractPQEDFromPrivateKey = async (privateKey: CryptoKey): Promise<{ n: BigInt; p: BigInt; q: BigInt; e: BigInt; d: BigInt }> => {
+    const jwk = await crypto.subtle.exportKey("jwk", privateKey);
 
-    const asn1 = asn1js.fromBER(pkcs8);
-    if (asn1.offset === -1) {
-        throw new Error("Error parsing PKCS8");
-    }
-    const privateKeyInfo = new PrivateKeyInfo({ schema: asn1.result });
-    console.log(privateKeyInfo);
-    const rsaPrivateKey = new RSAPrivateKey({ schema: privateKeyInfo.privateKey.valueBlock.valueHexView });
-    return { e: rsaPrivateKey.publicExponent.toBigInt(), d: rsaPrivateKey.privateExponent.toBigInt(), p: rsaPrivateKey.prime1.toBigInt(), q: rsaPrivateKey.prime2.toBigInt(), };
+    return ({
+        n: convertNumber(jwk.n!),
+        p: convertNumber(jwk.p!),
+        q: convertNumber(jwk.q!),
+        e: convertNumber(jwk.e!),
+        d: convertNumber(jwk.d!),
+    })
 };
 
 const PageGenerateKeyPair: React.FC<{}> = () => {
     const [loading, setLoading] = useState(false);
+    const [pubKey, setPubKey] = useState<string | null>(null);
+    const [privateKey, setPrivateKey] = useState<string | null>(null);
 
     const doGenerate = async () => {
         try {
@@ -29,10 +31,12 @@ const PageGenerateKeyPair: React.FC<{}> = () => {
                 hash: "SHA-256",
             },
                 true, ["decrypt", "encrypt"]);
-            console.log("started...");
-            console.log(await extractPQEDFromPrivateKey(key.privateKey));
+            setPubKey(JSON.stringify(await window.crypto.subtle.exportKey("jwk", key.publicKey)));
+            setPrivateKey(JSON.stringify(await window.crypto.subtle.exportKey("jwk", key.privateKey)));
+
         } catch (e) {
             alert(e);
+            console.error(e);
             throw e;
         } finally {
             setLoading(false);
@@ -42,6 +46,22 @@ const PageGenerateKeyPair: React.FC<{}> = () => {
     return <>
         {loading && <Dimmer page active><Loader></Loader></Dimmer>}
         <Button color="green" onClick={doGenerate}>Generate</Button>
+        {(pubKey !== null || privateKey !== null) && <>
+
+            <Divider></Divider>
+            <Message info success>
+                <Message.Header>Generation done</Message.Header>
+                <Message.Content>
+                    Please keep your private key and send your public key to the administrator
+                </Message.Content>
+            </Message>
+            <Form>
+                {privateKey !== null && <Form.TextArea label="Private key" value={privateKey} onChange={() => { }}></Form.TextArea>}
+                {pubKey !== null && <Form.TextArea label="Public key" value={pubKey} onChange={() => { }}></Form.TextArea>}
+
+            </Form>
+        </>
+        }
     </>;
 
 }
