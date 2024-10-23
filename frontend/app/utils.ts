@@ -14,7 +14,7 @@ export const useInputValue: (text?: string) => { value: string; onChange: onChan
 };
 export function randCandidateId(): Uint8Array {
     const result = new Uint8Array(4);
-    window.crypto.getRandomValues(result);
+    globalThis.crypto.getRandomValues(result);
     return result;
 }
 export function uint8ArrToHex(s: Uint8Array): string {
