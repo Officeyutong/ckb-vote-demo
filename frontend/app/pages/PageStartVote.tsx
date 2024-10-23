@@ -6,6 +6,7 @@ import { cccClient } from "../ccc-client";
 import { Buffer } from "buffer";
 import _ from "lodash";
 import * as bigintConversion from 'bigint-conversion'
+
 const CHUNK_SIZE = 600;
 interface CandidateEntry {
     id: Uint8Array;
@@ -19,7 +20,7 @@ interface RSAPubKey {
 function encodeCandidate(data: CandidateEntry[]): ArrayBuffer {
     const buf = Buffer.alloc(2 + data.length * 104);
     let idx = 0;
-    idx += buf.writeUInt16LE(data.length); // Number of candidate
+    idx = buf.writeUInt16LE(data.length); // Number of candidate
     for (const item of data) {
         buf.set(item.id, idx);
         idx += 4;
@@ -35,21 +36,43 @@ function encodeCandidate(data: CandidateEntry[]): ArrayBuffer {
 function encodePubKeyArray(keys: RSAPubKey[]): ArrayBuffer {
     const buf = Buffer.alloc(2 + keys.length * (256 + 4));
     let idx = 0;
-    idx += buf.writeUint16LE(keys.length);
+    idx = buf.writeUint16LE(keys.length);
     for (const item of keys) {
-        const nBuf = bigintConversion.bigintToBuf(item.n, false) as Buffer;
-        if (nBuf.length > 256) throw new Error("Bad modulus");
-        buf.set(nBuf, idx);
+        const nBuf = bigintConversion.bigintToBuf(item.n, true) as ArrayBuffer;
+        // bigintConversion gives us big endian, so reverse it
+        if (nBuf.byteLength > 256) throw new Error("Bad modulus");
+        buf.set(new Uint8Array(nBuf).reverse(), idx);
         idx += 256;
     }
     for (const item of keys) {
-        const eBuf = bigintConversion.bigintToBuf(item.e, false) as Buffer;
-        if (eBuf.length > 4) throw new Error("Bad public exponent");
-        buf.set(eBuf, idx);
+        const eBuf = bigintConversion.bigintToBuf(item.e, true) as ArrayBuffer;
+        if (eBuf.byteLength > 4) throw new Error("Bad public exponent");
+        buf.set(new Uint8Array(eBuf).reverse(), idx);
         idx += 4;
     }
     return buf.buffer;
 }
+
+interface PubkeyIndexEntry {
+    index: number;
+    txHash: Uint8Array;
+}
+
+function encodePubkeyIndexCell(entries: PubkeyIndexEntry[]): ArrayBuffer {
+    const buf = Buffer.alloc(2 + entries.length * (32 + 4));
+    let idx = 0;
+    idx = buf.writeUint16LE(entries.length);
+    for (const item of entries) {
+        buf.set(item.txHash, idx);
+        idx += 32;
+    }
+    for (const item of entries) {
+        idx = buf.writeUint32LE(item.index, idx);
+    }
+
+    return buf.buffer;
+}
+
 interface PreparedTx { sendTx: () => Promise<string>; tx: ccc.Transaction };
 async function publishBytes(bytes: ArrayBuffer, lockScript: ScriptLike, signer: SignerCkbPrivateKey, dataName: string): Promise<PreparedTx> {
     const tx = ccc.Transaction.from({
@@ -84,6 +107,12 @@ interface VoteTransactions {
     pubKeys: PreparedTx[];
 }
 
+interface VoteCreationResult {
+    candidateCellTxHash: string;
+    publicKeyCellTxHash: string[];
+    publicKeyIndexCellTxHash: string;
+}
+
 enum Stage {
     INIT = 1,
     ACCOUNT_LOADED = 2,
@@ -111,6 +140,7 @@ interface StageSended {
     accountData: AccountData;
     preparedTx: VoteTransactions;
     pubKeyIndexTx: PreparedTx;
+    result: VoteCreationResult;
 }
 
 
@@ -127,7 +157,6 @@ const PageStartVote: React.FC<{}> = () => {
 
     const [doneCount, setDoneCount] = useState(0);
     const [totalCount, setTotalCount] = useState(1);
-    console.log(doneCount, totalCount);
     const progress = Math.floor(doneCount / totalCount * 100);
     const [progressText, setProgressText] = useState<string | null>(null);
 
@@ -188,7 +217,6 @@ const PageStartVote: React.FC<{}> = () => {
             const signer = accountData.account.signer;
             const chunkCount = Math.ceil(pubKeys.length / CHUNK_SIZE);
             setTotalCount(1 + chunkCount);
-            console.log("Started ..");
             let candidateTx;
             {
                 setProgressText("Generating candidate data..");
@@ -199,10 +227,10 @@ const PageStartVote: React.FC<{}> = () => {
             const pubKeysTx: PreparedTx[] = [];
             for (const [chunk, idx] of _(pubKeys).chunk(CHUNK_SIZE).map((val, idx) => [val, idx] as [RSAPubKey[], number]).value()) {
                 setProgressText(`Generating public key data (${idx + 1}/${chunkCount})`);
-                pubKeysTx.push(await publishBytes(encodePubKeyArray(chunk), accountData.address.script, signer, "pubkey chunk"));
+                const encoded = encodePubKeyArray(chunk);
+                pubKeysTx.push(await publishBytes(encoded, accountData.address.script, signer, "pubkey chunk"));
                 setDoneCount(c => c + 1);
             }
-
             let requiredCkb = BigInt(0);
             requiredCkb += candidateTx.tx.getOutputsCapacity();
             for (const tx of pubKeysTx) requiredCkb += tx.tx.getOutputsCapacity();
@@ -232,6 +260,7 @@ const PageStartVote: React.FC<{}> = () => {
         setDoneCount(0);
         setProgressText("Sending candidate cell..");
         const candidateHash = await txs.candidate.sendTx();
+        console.log(candidateHash);
         setDoneCount(1);
         const pubKeyHashes: string[] = [];
         for (const [item, index] of txs.pubKeys.map((val, idx) => [val, idx] as [PreparedTx, number])) {
@@ -239,9 +268,43 @@ const PageStartVote: React.FC<{}> = () => {
             pubKeyHashes.push(await item.sendTx());
             setDoneCount(c => c + 1);
         }
+        setProgressText("Sending public key index cell..");
+        const pubKeyIndexData = encodePubkeyIndexCell(pubKeyHashes.map(value => ({
+            index: 0,
+            txHash: new Uint8Array(bigintConversion.hexToBuf(value, true) as ArrayBuffer).reverse()
+        })))
+        console.log(pubKeyHashes);
+        const pubKeyPreparedTx = await publishBytes(pubKeyIndexData, stage.accountData.account.lockScript, stage.accountData.account.signer, "public key index");
+        const pubkeyIndexHash = await pubKeyPreparedTx.sendTx();
+        console.log(pubkeyIndexHash);
+        setStage({
+            stage: Stage.SENDED, accountData: stage.accountData, preparedTx: stage.preparedTx, pubKeyIndexTx: pubKeyPreparedTx, result: {
+                candidateCellTxHash: candidateHash,
+                publicKeyCellTxHash: pubKeyHashes,
+                publicKeyIndexCellTxHash: pubkeyIndexHash
+            }
+        })
         setProgressText(null);
 
     };
+    const doSaveResult = () => {
+        if (stage.stage !== Stage.SENDED) {
+            alert("bad stage");
+            return;
+        }
+        const encoder = new TextEncoder();
+        const blob = new Blob([
+            encoder.encode(JSON.stringify(stage.result))
+        ]);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'hashes.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
     return <>
         {progressText !== null && <Modal open size="small">
             <Modal.Header>Progress</Modal.Header>
@@ -346,6 +409,17 @@ const PageStartVote: React.FC<{}> = () => {
                     <Form.Button color="green" onClick={() => setStage({ stage: Stage.ACCOUNT_LOADED, accountData: stage.accountData })}>
                         Return to data preparation
                     </Form.Button>
+                </>}
+                {stage.stage === Stage.SENDED && <>
+                    <Message info>
+                        <Message.Header>Successfully started</Message.Header>
+                        <Message.Content>
+                            <p>Candidate cell tx hash: {stage.result.candidateCellTxHash}, index 0</p>
+                            <p>Public key index cell tx hash: {stage.result.publicKeyIndexCellTxHash}, index 0</p>
+                            <p>For other hashes, please save the result JSON</p>
+                        </Message.Content>
+                    </Message>
+                    <Button color="green" onClick={doSaveResult}>Save hashes</Button>
                 </>}
             </>}
         </Form>
