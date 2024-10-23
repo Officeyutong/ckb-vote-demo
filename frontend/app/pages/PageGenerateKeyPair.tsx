@@ -1,19 +1,18 @@
 import { useState } from "react";
 import { Button, Dimmer, Divider, Form, Loader, Message } from "semantic-ui-react";
+import { convertJWKNumber } from "../utils";
 
 
-function convertNumber(input: string): bigint {
-    return BigInt("0x00" + Buffer.from(input, "base64").toString("hex"))
-}
+
 const extractPQEDFromPrivateKey = async (privateKey: CryptoKey): Promise<{ n: BigInt; p: BigInt; q: BigInt; e: BigInt; d: BigInt }> => {
     const jwk = await crypto.subtle.exportKey("jwk", privateKey);
 
     return ({
-        n: convertNumber(jwk.n!),
-        p: convertNumber(jwk.p!),
-        q: convertNumber(jwk.q!),
-        e: convertNumber(jwk.e!),
-        d: convertNumber(jwk.d!),
+        n: convertJWKNumber(jwk.n!),
+        p: convertJWKNumber(jwk.p!),
+        q: convertJWKNumber(jwk.q!),
+        e: convertJWKNumber(jwk.e!),
+        d: convertJWKNumber(jwk.d!),
     })
 };
 
