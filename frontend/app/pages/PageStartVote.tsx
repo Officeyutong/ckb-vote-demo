@@ -1,106 +1,13 @@
-import { useCallback, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Button, Dimmer, Divider, Form, Input, InputOnChangeData, Loader, Message, Modal, Progress, Table, TextArea } from "semantic-ui-react";
-import { Address, ccc, ScriptLike, SignerCkbPrivateKey } from "@ckb-ccc/core";
-import { Account, convertJWKNumber, generateAccountFromPrivateKey, randCandidateId, uint8ArrToHex, useInputValue } from "../utils";
+import { Address, ccc } from "@ckb-ccc/core";
+import { Account, AccountData, CandidateEntry, convertJWKNumber, encodeCandidate, encodePubKeyArray, encodePubkeyIndexCell, generateAccountFromPrivateKey, PreparedTx, publishBytesAsCell, randCandidateId, RSAPubKey, uint8ArrToHex, useInputValue } from "../utils";
 import { cccClient } from "../ccc-client";
-import { Buffer } from "buffer";
 import _ from "lodash";
 import * as bigintConversion from 'bigint-conversion'
 
 const CHUNK_SIZE = 600;
-interface CandidateEntry {
-    id: Uint8Array;
-    description: string;
-}
 
-interface RSAPubKey {
-    e: bigint;
-    n: bigint;
-}
-function encodeCandidate(data: CandidateEntry[]): ArrayBuffer {
-    const buf = Buffer.alloc(2 + data.length * 104);
-    let idx = 0;
-    idx = buf.writeUInt16LE(data.length); // Number of candidate
-    for (const item of data) {
-        buf.set(item.id, idx);
-        idx += 4;
-        const writtenLen = buf.write(item.description, idx, 99, "utf8");
-        idx += writtenLen;
-        for (let i = 1; i <= 100 - writtenLen; i++) {
-            buf.writeInt8(0, idx); idx++;
-        };
-    }
-    return buf.buffer;
-}
-
-function encodePubKeyArray(keys: RSAPubKey[]): ArrayBuffer {
-    const buf = Buffer.alloc(2 + keys.length * (256 + 4));
-    let idx = 0;
-    idx = buf.writeUint16LE(keys.length);
-    for (const item of keys) {
-        const nBuf = bigintConversion.bigintToBuf(item.n, true) as ArrayBuffer;
-        // bigintConversion gives us big endian, so reverse it
-        if (nBuf.byteLength > 256) throw new Error("Bad modulus");
-        buf.set(new Uint8Array(nBuf).reverse(), idx);
-        idx += 256;
-    }
-    for (const item of keys) {
-        const eBuf = bigintConversion.bigintToBuf(item.e, true) as ArrayBuffer;
-        if (eBuf.byteLength > 4) throw new Error("Bad public exponent");
-        buf.set(new Uint8Array(eBuf).reverse(), idx);
-        idx += 4;
-    }
-    return buf.buffer;
-}
-
-interface PubkeyIndexEntry {
-    index: number;
-    txHash: Uint8Array;
-}
-
-function encodePubkeyIndexCell(entries: PubkeyIndexEntry[]): ArrayBuffer {
-    const buf = Buffer.alloc(2 + entries.length * (32 + 4));
-    let idx = 0;
-    idx = buf.writeUint16LE(entries.length);
-    for (const item of entries) {
-        buf.set(item.txHash, idx);
-        idx += 32;
-    }
-    for (const item of entries) {
-        idx = buf.writeUint32LE(item.index, idx);
-    }
-
-    return buf.buffer;
-}
-
-interface PreparedTx { sendTx: () => Promise<string>; tx: ccc.Transaction };
-async function publishBytes(bytes: ArrayBuffer, lockScript: ScriptLike, signer: SignerCkbPrivateKey, dataName: string): Promise<PreparedTx> {
-    const tx = ccc.Transaction.from({
-        outputs: [{ lock: lockScript }],
-        outputsData: [bytes]
-    });
-
-
-    // const balanceDiff =
-    //     (await tx.getInputsCapacity(cccClient)) - tx.getOutputsCapacity();
-    // if (balanceDiff < 0) {
-    //     throw new Error(`Insufficient balance: missing ${Math.abs(parseFloat(balanceDiff.toString()) / 100000000)} CKB for publishing ${dataName} data`)
-    // }
-    return {
-        sendTx: async () => {
-            await tx.completeFeeBy(signer, 1000);
-            await tx.completeInputsAll(signer);
-            return await signer.sendTransaction(tx);
-        },
-        tx
-    };
-}
-
-interface AccountData {
-    account: Account;
-    address: Address;
-    balance: bigint;
-}
 
 interface VoteTransactions {
     candidate: PreparedTx;
@@ -221,14 +128,14 @@ const PageStartVote: React.FC<{}> = () => {
             {
                 setProgressText("Generating candidate data..");
                 const candidatesData = encodeCandidate(candidates);
-                candidateTx = await publishBytes(candidatesData, accountData.address.script, signer, "candidate");
+                candidateTx = await publishBytesAsCell(candidatesData, accountData.address.script, signer, "candidate");
                 setDoneCount(1);
             }
             const pubKeysTx: PreparedTx[] = [];
             for (const [chunk, idx] of _(pubKeys).chunk(CHUNK_SIZE).map((val, idx) => [val, idx] as [RSAPubKey[], number]).value()) {
                 setProgressText(`Generating public key data (${idx + 1}/${chunkCount})`);
                 const encoded = encodePubKeyArray(chunk);
-                pubKeysTx.push(await publishBytes(encoded, accountData.address.script, signer, "pubkey chunk"));
+                pubKeysTx.push(await publishBytesAsCell(encoded, accountData.address.script, signer, "pubkey chunk"));
                 setDoneCount(c => c + 1);
             }
             let requiredCkb = BigInt(0);
@@ -271,10 +178,10 @@ const PageStartVote: React.FC<{}> = () => {
         setProgressText("Sending public key index cell..");
         const pubKeyIndexData = encodePubkeyIndexCell(pubKeyHashes.map(value => ({
             index: 0,
-            txHash: new Uint8Array(bigintConversion.hexToBuf(value, true) as ArrayBuffer).reverse()
+            txHash: new Uint8Array(bigintConversion.hexToBuf(value, true) as ArrayBuffer)
         })))
         console.log(pubKeyHashes);
-        const pubKeyPreparedTx = await publishBytes(pubKeyIndexData, stage.accountData.account.lockScript, stage.accountData.account.signer, "public key index");
+        const pubKeyPreparedTx = await publishBytesAsCell(pubKeyIndexData, stage.accountData.account.lockScript, stage.accountData.account.signer, "public key index");
         const pubkeyIndexHash = await pubKeyPreparedTx.sendTx();
         console.log(pubkeyIndexHash);
         setStage({
@@ -309,7 +216,7 @@ const PageStartVote: React.FC<{}> = () => {
         {progressText !== null && <Modal open size="small">
             <Modal.Header>Progress</Modal.Header>
             <Modal.Content>
-                <Progress percent={progress} active label={progressText}></Progress>
+                <Progress color="green" percent={progress} active label={progressText}></Progress>
             </Modal.Content>
         </Modal>}
         {loading && progressText === null && <Dimmer active page><Loader></Loader></Dimmer>}

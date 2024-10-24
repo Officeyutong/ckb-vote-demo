@@ -1,13 +1,28 @@
 {
   "devnet": {
-    "ring-signature-verify": {
-      "codeHash": "0x94392a5379c06daaccf7b74fbcc556cdb348601b23f3964fc2e580b7666cafca",
+    "hash-lock": {
+      "codeHash": "0x23f0d679c3e159789afe7276b6323c56ee2d1258eb1a6d4c9f5f44729fbc511e",
       "hashType": "type",
       "cellDeps": [
         {
           "cellDep": {
             "outPoint": {
-              "txHash": "0x6d206b81cbfcf1683ffdcde90a13e1e433f834dd40dbffb25180f135804e04d0",
+              "txHash": "0xbd699868ebee5eeeb778192b0dd1109711dbaf3431659c7581282ecdcdaf3d80",
+              "index": 0
+            },
+            "depType": "code"
+          }
+        }
+      ]
+    },
+    "ring-signature-verify": {
+      "codeHash": "0x5a855c78e8ad0863b42a1e22899b052bfa6d7bc893927ed9e0665dac03ce8d56",
+      "hashType": "type",
+      "cellDeps": [
+        {
+          "cellDep": {
+            "outPoint": {
+              "txHash": "0x493e78faab255566239622e23fb72c2ae4ae41d2dff40ee77ec06d388f5c21b7",
               "index": 0
             },
             "depType": "code"
