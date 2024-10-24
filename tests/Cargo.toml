@@ -5,4 +5,10 @@ edition = "2021"
 
 [dependencies]
 ckb-testtool = "0.10.2"
-serde_json = "1.0"
+jose-jwk = "0.1.2"
+num-bigint-dig = "0.8.4"
+rand = "0.8.5"
+rayon = "1.10.0"
+rsa = "0.9.6"
+serde_json = "1.0.132"
+sha2 = "0.10.8"
