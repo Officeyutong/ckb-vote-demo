@@ -601,15 +601,12 @@ checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 name = "contract-unit-tests"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "ckb-testtool",
- "jose-jwk",
- "num-bigint-dig",
  "rand 0.8.5",
  "rayon",
  "rsa",
+ "rsa_ring_sign_linkable",
  "serde_json",
- "sha2",
 ]
 
 [[package]]
@@ -1464,6 +1461,24 @@ dependencies = [
  "spki",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "rsa_ring_sign_linkable"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "num-bigint-dig",
+ "rand 0.8.5",
+ "rsa",
+ "sha2",
+]
+
+[[package]]
+name = "rsa_ring_sign_linkable_wasm"
+version = "0.1.0"
+dependencies = [
+ "rsa_ring_sign_linkable",
 ]
 
 [[package]]

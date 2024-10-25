@@ -1,12 +1,7 @@
 [package]
-name = "contract-unit-tests"
+name = "rsa_ring_sign_linkable_wasm"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ckb-testtool = "0.10.2"
-rand = "0.8.5"
-rayon = "1.10.0"
-rsa = "0.9.6"
-serde_json = "1.0.132"
 rsa_ring_sign_linkable = { path = "../rsa_ring_sign_linkable" }
