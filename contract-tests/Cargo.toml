@@ -1,9 +1,10 @@
 [package]
-name = "tests"
+name = "contract-unit-tests"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.91"
 ckb-testtool = "0.10.2"
 jose-jwk = "0.1.2"
 num-bigint-dig = "0.8.4"

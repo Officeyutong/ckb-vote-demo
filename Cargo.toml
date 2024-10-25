@@ -6,7 +6,7 @@ members = [ "ckb-vote-test-tool",
   # detect insertion point for newly generated crates.
   # @@INSERTION_POINT@@
   "contracts/ring-signature-verify",
-  "tests",
+  "contract-tests",
 ]
 
 [profile.release]
