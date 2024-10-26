@@ -122,7 +122,11 @@ fn test_verify_signature() {
     let signer_index = signer % CHUNK_SIZE;
     let selected_candidate = state.candidates.choose(&mut rng).unwrap();
     let signature = create_signature(
-        &state.keys[CHUNK_SIZE * signer_block..CHUNK_SIZE * (signer_block + 1)],
+        &state.keys[CHUNK_SIZE * signer_block..CHUNK_SIZE * (signer_block + 1)]
+            .iter()
+            .map(|s| s.to_public_key())
+            .collect::<Vec<_>>(),
+        &state.keys[signer_index],
         signer_index,
         &selected_candidate.id,
     )

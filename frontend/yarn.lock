@@ -2690,6 +2690,9 @@ ripemd160@^2.0.0, ripemd160@^2.0.1:
     hash-base "^3.0.0"
     inherits "^2.0.1"
 
+"rsa_ring_sign_linkable_wasm@file:../rsa_ring_sign_linkable_wasm/pkg":
+  version "0.1.0"
+
 run-parallel@^1.1.9:
   version "1.2.0"
   resolved "https://registry.npmmirror.com/run-parallel/-/run-parallel-1.2.0.tgz#66d1368da7bdf921eb9d95bd1a9229e7f21a43ee"

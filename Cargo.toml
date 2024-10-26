@@ -13,3 +13,4 @@ members = [ "ckb-vote-test-tool",
 overflow-checks = true
 strip = true
 codegen-units = 1
+opt-level = "s"

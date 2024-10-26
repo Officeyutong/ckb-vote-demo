@@ -2,13 +2,13 @@ use std::io::Write;
 
 use anyhow::bail;
 use num_bigint_dig::RandBigInt;
-use rsa::{
-    traits::{PrivateKeyParts, PublicKeyParts},
-    BigUint, RsaPrivateKey,
-};
+pub use rsa::traits::{PrivateKeyParts, PublicKeyParts};
 use sha2::Digest;
 use sha2::Sha256;
 
+pub use rsa::BigUint;
+pub use rsa::RsaPrivateKey;
+pub use rsa::RsaPublicKey;
 #[derive(Debug)]
 pub struct SignaturePubKeyEnt {
     pub r: BigUint,
@@ -57,17 +57,17 @@ fn sha256_for_integer(num: &BigUint) -> BigUint {
 }
 
 pub fn create_signature(
-    all_keys: &[RsaPrivateKey],
+    all_keys: &[RsaPublicKey],
+    signer_private_key: &RsaPrivateKey,
     signer: usize,
     message: &[u8],
 ) -> anyhow::Result<Signature> {
     let one = 1u32.into();
     let mut rng = rand::thread_rng();
-    let skey = &all_keys[signer];
+    let skey = signer_private_key;
     let [p, q] = &skey.primes()[..2] else {
         bail!("Unexpected prime count");
     };
-    assert_eq!(p * q, skey.n().clone());
     let n = all_keys.len();
     let mut r_arr = vec![BigUint::default(); n];
     let mut c_arr = vec![BigUint::default(); n];
