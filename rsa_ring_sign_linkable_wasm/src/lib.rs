@@ -17,7 +17,12 @@ fn ensure_size(a: BigUint, expected_size: usize) -> Vec<u8> {
     x.resize(expected_size, 0);
     return x;
 }
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
 
+}
 #[wasm_bindgen]
 pub fn create_signature_wasm(
     n: usize,
@@ -33,7 +38,10 @@ pub fn create_signature_wasm(
     for i in 0..n {
         let e = BigUint::from_bytes_le(&pub_keys_e_arr[i * 4..(i + 1) * 4]);
         let n = BigUint::from_bytes_le(&pub_keys_n_arr[i * 256..(i + 1) * 256]);
-        pub_keys.push(RsaPublicKey::new(n, e).map_err(|e| format!("Bad public key: {}", e))?);
+        pub_keys.push(
+            RsaPublicKey::new(n.clone(), e.clone())
+                .map_err(|err| format!("Bad public key (n={}, e={}): {}", n, e, err))?,
+        );
     }
     let signer_pub_key = &pub_keys[signer];
     let private_key = RsaPrivateKey::from_components(

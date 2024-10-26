@@ -1,20 +1,5 @@
 import { useState } from "react";
 import { Button, Dimmer, Divider, Form, Loader, Message } from "semantic-ui-react";
-import { convertJWKNumber } from "../utils";
-
-
-
-const extractPQEDFromPrivateKey = async (privateKey: CryptoKey): Promise<{ n: BigInt; p: BigInt; q: BigInt; e: BigInt; d: BigInt }> => {
-    const jwk = await crypto.subtle.exportKey("jwk", privateKey);
-
-    return ({
-        n: convertJWKNumber(jwk.n!),
-        p: convertJWKNumber(jwk.p!),
-        q: convertJWKNumber(jwk.q!),
-        e: convertJWKNumber(jwk.e!),
-        d: convertJWKNumber(jwk.d!),
-    })
-};
 
 const PageGenerateKeyPair: React.FC<{}> = () => {
     const [loading, setLoading] = useState(false);

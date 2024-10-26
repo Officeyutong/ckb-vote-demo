@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { InputOnChangeData } from "semantic-ui-react";
 import { cccClient } from "./ccc-client";
 import * as bigintConversion from 'bigint-conversion'
+import base64url from "base64url";
 
 export type onChangeType = ((event: React.ChangeEvent<HTMLInputElement>, data: InputOnChangeData) => void);
 
@@ -22,7 +23,8 @@ export function uint8ArrToHex(s: Uint8Array): string {
     return Array.from(s).map(x => x.toString(16).padStart(2, "0")).join("")
 }
 export function convertJWKNumber(input: string): bigint {
-    return BigInt("0x00" + Buffer.from(input, "base64").toString("hex"))
+    base64url
+    return BigInt("0x00" + base64url.toBuffer(input).toString("hex"))
 }
 export type Account = {
     lockScript: Script;
@@ -105,19 +107,26 @@ export function encodePubKeyArray(keys: RSAPubKey[]): ArrayBuffer {
     }
     return buf.buffer;
 }
+
+function reverseBuffer(buf: Buffer): Buffer {
+    const arr = new Uint8Array(buf);
+    arr.reverse();
+    return Buffer.from(arr);
+}
+
 export function decodePubKeyArray(buf: Buffer): RSAPubKey[] {
     const result: Partial<RSAPubKey>[] = [];
     let idx = 0;
     const n = buf.readUint16LE(); idx += 2;
     for (let i = 0; i < n; i++) {
-        const n = bigintConversion.bufToBigint(buf.subarray(idx, idx + 256).reverse() /* We are in little endian*/);
+        const n = bigintConversion.bufToBigint(reverseBuffer(buf.subarray(idx, idx + 256))/* We are in little endian*/);
         idx += 256;
-
+        // console.log("decode", buf.subarray(idx, idx + 256), "to", n);
         result.push({ n });
 
     }
     for (let i = 0; i < n; i++) {
-        const e = bigintConversion.bufToBigint(buf.subarray(idx, idx + 4).reverse() /* We are in little endian*/);
+        const e = bigintConversion.bufToBigint(reverseBuffer(buf.subarray(idx, idx + 4)) /* We are in little endian*/);
         idx += 4;
         result[i].e = e;
     }

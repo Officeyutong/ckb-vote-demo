@@ -33,7 +33,7 @@ export BUILD_DIR
 
 default: build test
 
-build:
+build: build-wasm
 	@if [ "x$(CLEAN_BUILD_DIR_FIRST)" = "xtrue" ]; then \
 		echo "Cleaning $(BUILD_DIR) directory..."; \
 		rm -rf $(BUILD_DIR); \
@@ -47,6 +47,10 @@ build:
 	else \
 		$(MAKE) -e -C contracts/$(CONTRACT) build; \
 	fi
+
+build-wasm:
+	cargo install wasm-pack
+	cd rsa_ring_sign_linkable_wasm && wasm-pack build --target web --release
 
 # Run a single make task for a specific contract. For example:
 #

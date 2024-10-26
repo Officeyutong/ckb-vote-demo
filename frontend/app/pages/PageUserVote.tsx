@@ -1,11 +1,11 @@
-import { Button, Dimmer, Form, Input, Loader, Message, Modal, Progress, Table } from "semantic-ui-react";
-import { AccountData, CandidateEntry, decodeCandidate, decodePubKeyArray, decodePubkeyIndexCell, generateAccountFromPrivateKey, PubkeyIndexEntry, RSAPubKey, uint8ArrToHex, useInputValue } from "../utils";
+import { Button, Dimmer, Form, Input, Loader, Message, Modal, Progress, Table, TextArea } from "semantic-ui-react";
+import { AccountData, CandidateEntry, convertJWKNumber, decodeCandidate, decodePubKeyArray, decodePubkeyIndexCell, generateAccountFromPrivateKey, PubkeyIndexEntry, RSAPubKey, uint8ArrToHex, useInputValue } from "../utils";
 import { useState } from "react";
 import { cccClient } from "../ccc-client";
 import { ccc } from "@ckb-ccc/core";
-import { hexToBuf } from "bigint-conversion";
+import { bigintToBuf, hexToBuf } from "bigint-conversion";
 import _ from "lodash";
-
+import __wbg_init, { create_signature_wasm } from "rsa_ring_sign_linkable_wasm";
 enum Stage {
     INIT = 0,
     CANDIDATE_LOADED = 1,
@@ -16,18 +16,44 @@ interface StageInit {
     stage: Stage.INIT;
 }
 
+interface PubKeyBlock { index: PubkeyIndexEntry; keys: RSAPubKey[]; };
+
 interface StageCandidateLoaded {
     stage: Stage.CANDIDATE_LOADED;
     candidate: CandidateEntry[];
     accountData: AccountData;
     pubKeyIndex: PubkeyIndexEntry[];
-    pubKeys: { index: PubkeyIndexEntry; keys: RSAPubKey[]; }[];
+    pubKeys: PubKeyBlock[];
 }
 
 interface StageVoted extends Omit<StageCandidateLoaded, "stage"> {
     stage: Stage.VOTED;
 }
 
+function encodeBigIntArray(arr: bigint[], entrySize: number): Uint8Array {
+    const buf = Buffer.alloc(arr.length * entrySize);
+    let idx = 0;
+    for (const item of arr) {
+        const nBuf = bigintToBuf(item, true) as ArrayBuffer;
+        buf.set(new Uint8Array(nBuf).reverse(), idx);
+        idx += entrySize;
+    }
+    const result = new Uint8Array(buf.buffer);
+    // console.log(arr, "->", result);
+    return result;
+}
+
+const EXAMPLE_PRIVATE_KEY = `{"kty":"RSA","n":"yTEpLlTR5F7jCvWC6_ac8yFnJKZcpzSwfjsQwNQTIA79n_FiiCbapRrOBmm98T66TjvuOnlIiZAScwRhBk3Puy0gcn9WwLwtnw3GhEt0oNY0S4jFH7O-7YMs2DyJ0dpMqmjjTQta3btBu7RdWGBxOUY9K2dwJrzSdtc41bTOXRxa9L3R8fc0mG7F_vgzEIV8zUdXniYxtBlPO-ASB8BUXrDR3ZfmfblwJxyipmYdm-7CZhumsLcgbAlD9n0zdEShBd5H_hMfIM6NH-8Mohxue6-tEjN3MK_l60q9gMB24j31tsAhTNnBJaK7hlJuxXyfkizu9xT5bpXVcm7g1dImaQ","e":"AQAB","d":"uc_Ud7zQiLj1uZZbjvAZrhaIevnGkoqAAmUsqNp0u2P86231EUfJITkrVBLu4NKNIFoLQCfpTVspHt7JeRf-JaGc2QIwLhrdi4seb-p8UVrju2sam5fXWuaOUTtAEfcqXSw32V0GU8hxAhmnKEsR5tKvBdonYy96tVU6YWz2NlipcMJEZMbdLPQ0tblJFJHdOfCUYIWsrxT3s93R_ToivvHrVUvBz-Pr1FWVI01MQlkBGH6g6V0h_vLGDV6KZi_m9z5UgPiie8XgZjGdUhG8kVLW_6dsGfdpI0sG5JNNy9QyzHK7ui5DyCSAXsRMsZSKzFCTMj7xgpsYXmwiJy8ubQ","p":"3N0mcJfz87J6Wal4DHwtjMHthKF6vsCrHQzDqYtx1-Zo7q65M640DI_6EN_Vh15w0AJILMuS5k4bELluJ-pctIYx63AEeQoD5HUs6R3RQC3XNPi8-aKqbZirC00mSNAJG9k92SrWtGzgrZ5MmelqGV7wZb1lcFcbi17EDmaJWsc","q":"6TLcOkvKv1LTPnk_nQLDhUIg0CtxmMjzXhZNebMS9t4VHXkvtuTDR954-fqPhdxcKNnw1N4ojE33UJP8S-4VxFST1eyCnbIpU9GBQXnMzNn9Kb7dZDOO66ENEhUJ-AEv2EjwzXOr1lL8djfBOyJWGhK4-7Ku4YdSC60za5jMxU8","dp":"jFDjrvyau-RT3srPvf7WYWqDH5QHi1CUZWxKklhJB0UWvSy79J1j6-c8k6Pg4JObUEti1zKuLSrJ_yIPXcSDCR2IcW9FKDC4sFfRJHkRC5kT9E9in6Y8aExpvlBRVkj0wICPznxs00uooiTDvbSQ93VdfQWKgIiWs0CNhiiWctk","dq":"iUc7hcXgUMi9OmW-IPvjharsDh_E-6AwRA71BNN6MoGCBJu2jwAURVad-OqbWr3iMto5f9ZYIGA1WuYC-9_oSG9Rp_lW2uZqlcEbSiQdf-pDsjN9uOLxG5zvSNnByJFKTRSDTS7u1Xh8zkr8IYeREEA9TU5ezL0Qe3c2cfy9btk","qi":"A_2U4fZkQwJZZiSpKU6mheY0FKCW_-tqmfYsxhBr9_raVwCbskjysVX_rGtA5jZvXgaOTwt5JzFR8IGgHmBSQda0SI8IKvbEkKz31zcabDCdoTo8S-Vu60YiRZweAU7DKChYyRr073Vjid8y2IgOzF-XAJ2gpL-zyrlDMQiHSE4"}`;
+const extractPQEDFromPrivateKey = (key: any): { n: bigint; p: bigint; q: bigint; e: bigint; d: bigint } => {
+
+    return ({
+        n: convertJWKNumber(key.n as string),
+        p: convertJWKNumber(key.p as string),
+        q: convertJWKNumber(key.q as string),
+        e: convertJWKNumber(key.e as string),
+        d: convertJWKNumber(key.d as string),
+    })
+};
 const PageUserVote: React.FC<{}> = () => {
     const [stage, setStage] = useState<StageInit | StageCandidateLoaded | StageVoted>({ stage: Stage.INIT });
 
@@ -37,10 +63,11 @@ const PageUserVote: React.FC<{}> = () => {
 
     // A private key from devnet account
     const accountPrivateKey = useInputValue("0xa5808e79c243d8e026a034273ad7a5ccdcb2f982392fd0230442b1734c98a4c2");
-    const candidateHash = useInputValue("0x25ac3acb04e0ff302d2af483e04128470e1f71f1b44f22a8037e13662a960fcd");
-    const publicKeyIndexCell = useInputValue("0x245bad49116aa12aa0e400a65fb1374f1e131451f81f766016cca78eec3f85e0");
+    const candidateHash = useInputValue("0xe2b8382dcbb597f2093d7da13139682a0fc122c5549063959d9ab97c34707905");
+    const publicKeyIndexCell = useInputValue("0x49be3ada19500b396e39643e0154feb30da9ee8d1b5d3834e8c85c2278d0d9f2");
+    const [signPrivateKey, setSignPrivateKey] = useState(EXAMPLE_PRIVATE_KEY)
     const [loading, setLoading] = useState(false);
-    const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null);
+    const [selectedCandidate, setSelectedCandidate] = useState<CandidateEntry | null>(null);
     console.log(stage);
     const doLoadCandidateAndAccount = async () => {
         try {
@@ -102,7 +129,62 @@ const PageUserVote: React.FC<{}> = () => {
             setProgressText(null);
         }
     }
-
+    const doVote = async () => {
+        try {
+            if (stage.stage !== Stage.CANDIDATE_LOADED) {
+                alert("Bad stage"); return;
+            }
+            if (selectedCandidate === null) {
+                alert("Please select a candidate");
+                return;
+            }
+            setDoneCount(0); setTotalCount(3);
+            setProgressText("Looking for belonging block..");
+            const privateKey = extractPQEDFromPrivateKey(JSON.parse(signPrivateKey));
+            let index: PubKeyBlock | undefined;
+            let signerIndex: number | undefined;
+            for (const block of stage.pubKeys) {
+                for (const [entry, idx] of block.keys.map((val, idx) => [val, idx] as [RSAPubKey, number])) {
+                    if (entry.n === privateKey.n && entry.e === privateKey.e) {
+                        index = block;
+                        signerIndex = idx;
+                        break;
+                    }
+                }
+                if (index) break;
+            }
+            if (!index || signerIndex === undefined) {
+                alert("Unable to find belong block, please ensure your public key index cell is correct");
+                return;
+            }
+            console.log("index block",index);
+            setDoneCount(1);
+            setProgressText("Creating signature..");
+            await __wbg_init();
+            const signature = create_signature_wasm(
+                index.keys.length,
+                encodeBigIntArray(index.keys.map(s => s.e), 4),
+                encodeBigIntArray(index.keys.map(s => s.n), 256),
+                encodeBigIntArray([privateKey.p], 256),
+                encodeBigIntArray([privateKey.q], 256),
+                encodeBigIntArray([privateKey.d], 256),
+                signerIndex,
+                selectedCandidate.id,
+            );
+            console.log(signature);
+            setDoneCount(2);
+        
+            setProgressText("Creating transaction..");
+            
+            
+            
+        } catch (e) {
+            console.error(e);
+            alert(e);
+        } finally {
+            setProgressText(null);
+        }
+    };
     return <>
         {progressText !== null && <Modal open size="small">
             <Modal.Header>Progress</Modal.Header>
@@ -140,6 +222,10 @@ const PageUserVote: React.FC<{}> = () => {
             </Form.Button>}
             {stage.stage === Stage.CANDIDATE_LOADED && <>
                 <Form.Field>
+                    <label>Private key of signature</label>
+                    <TextArea value={signPrivateKey} onChange={(_, d) => setSignPrivateKey(d.value as string)}></TextArea>
+                </Form.Field>
+                <Form.Field>
                     <label>Candidate</label>
                     <Table>
                         <Table.Header>
@@ -156,13 +242,16 @@ const PageUserVote: React.FC<{}> = () => {
                                     <Table.Cell>{idStr}</Table.Cell>
                                     <Table.Cell>{item.description}</Table.Cell>
                                     <Table.Cell>
-                                        {idStr === selectedCandidate ? <Button size="small" color="red" disabled>Selected</Button> : <Button size="small" color="green" onClick={() => setSelectedCandidate(idStr)}>Select</Button>}
+                                        {(selectedCandidate && idStr === uint8ArrToHex(selectedCandidate.id)) ? <Button size="small" color="red" disabled>Selected</Button> : <Button size="small" color="green" onClick={() => setSelectedCandidate(item)}>Select</Button>}
                                     </Table.Cell>
                                 </Table.Row>;
                             })}
                         </Table.Body>
                     </Table>
                 </Form.Field>
+                <Form.Button onClick={doVote} color="green">
+                    Vote
+                </Form.Button>
             </>}
         </Form>
     </>

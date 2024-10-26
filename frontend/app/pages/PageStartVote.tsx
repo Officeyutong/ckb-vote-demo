@@ -53,7 +53,7 @@ interface StageSended {
 
 const PageStartVote: React.FC<{}> = () => {
     // A private key in devnet
-    const privateKey = useInputValue("0xa5808e79c243d8e026a034273ad7a5ccdcb2f982392fd0230442b1734c98a4c2");
+    const privateKey = useInputValue("0xfc8142dc0a6c1dc9102696e7ca730b8c05e233549ea924fafa477f5086d94ac3");
     const [candidates, setCandidates] = useState<CandidateEntry[]>([
         { id: randCandidateId(), description: "test" }
     ]);
