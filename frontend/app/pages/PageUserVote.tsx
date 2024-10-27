@@ -3,9 +3,10 @@ import { AccountData, CandidateEntry, convertJWKNumber, decodeCandidate, decodeP
 import { useState } from "react";
 import { cccClient } from "../ccc-client";
 import { ccc } from "@ckb-ccc/core";
-import { bigintToBuf, hexToBuf } from "bigint-conversion";
+import { bigintToBuf, bufToHex, hexToBuf } from "bigint-conversion";
 import _ from "lodash";
 import __wbg_init, { create_signature_wasm } from "rsa_ring_sign_linkable_wasm";
+import offCKBConfig from "@/offckb.config";
 enum Stage {
     INIT = 0,
     CANDIDATE_LOADED = 1,
@@ -63,8 +64,8 @@ const PageUserVote: React.FC<{}> = () => {
 
     // A private key from devnet account
     const accountPrivateKey = useInputValue("0xa5808e79c243d8e026a034273ad7a5ccdcb2f982392fd0230442b1734c98a4c2");
-    const candidateHash = useInputValue("0xe2b8382dcbb597f2093d7da13139682a0fc122c5549063959d9ab97c34707905");
-    const publicKeyIndexCell = useInputValue("0x49be3ada19500b396e39643e0154feb30da9ee8d1b5d3834e8c85c2278d0d9f2");
+    const candidateHash = useInputValue("0x205284fab97f8a408a15b326fa84f0046780ce882ba1c7e5bbdb3602dcba51aa");
+    const publicKeyIndexCell = useInputValue("0x79b7f4ba0faa8eca3ab4dd6f3d9060aa82b069add49c3083c14ee47551522f49");
     const [signPrivateKey, setSignPrivateKey] = useState(EXAMPLE_PRIVATE_KEY)
     const [loading, setLoading] = useState(false);
     const [selectedCandidate, setSelectedCandidate] = useState<CandidateEntry | null>(null);
@@ -157,7 +158,7 @@ const PageUserVote: React.FC<{}> = () => {
                 alert("Unable to find belong block, please ensure your public key index cell is correct");
                 return;
             }
-            console.log("index block",index);
+            console.log("index block", index);
             setDoneCount(1);
             setProgressText("Creating signature..");
             await __wbg_init();
@@ -173,11 +174,46 @@ const PageUserVote: React.FC<{}> = () => {
             );
             console.log(signature);
             setDoneCount(2);
-        
+
             setProgressText("Creating transaction..");
-            
-            
-            
+            const script = offCKBConfig.myScripts["ring-signature-verify"]!;
+            const tx = ccc.Transaction.from({
+                cellDeps: [
+                    ccc.CellDep.from({ outPoint: { txHash: candidateHash.value, index: 0 }, depType: 0 }),
+                    ccc.CellDep.from({ outPoint: { txHash: index.index.txHash, index: index.index.index }, depType: 0 }),
+                    script.cellDeps[0].cellDep
+                    // ccc.CellDep.from({ outPoint: { txHash: candidateHash.value, index: 0 }, depType: 0 }),
+                    // ccc.CellDep.from({ outPoint: { txHash: offCKBConfig.myScripts["ring-signature-verify"]!.codeHash, index: 0 }, depType: 0 }),
+                ],
+                outputs: [
+                    {
+                        lock: stage.accountData.account.lockScript, type: new ccc.Script(
+                            script.codeHash,
+                            script.hashType,
+                            "0x00"
+                        )
+                    }
+                ],
+                outputsData: [
+                    new Uint8Array([
+                        ...selectedCandidate.id,
+                        ...signature.c,
+                        ...signature.r_arr,
+                        ...signature.i])
+                ],
+
+            });
+
+            // tx.
+            await tx.completeFeeBy(stage.accountData.account.signer, 1000000);
+            await tx.completeInputsAll(stage.accountData.account.signer);
+            const newTx = await stage.accountData.account.signer.signTransaction(tx);
+            // newTx.setWitnessArgsAt(1, new ccc.WitnessArgs(undefined, undefined, bufToHex(new Uint8Array([...signature.c, ...signature.r_arr]), true) as `0x${string}`))
+
+            console.log(newTx);
+            const txHash = await cccClient.sendTransaction(newTx);
+
+            console.log(txHash);
         } catch (e) {
             console.error(e);
             alert(e);

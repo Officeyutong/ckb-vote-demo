@@ -2,12 +2,7 @@
 #![cfg_attr(not(test), no_main)]
 
 use bnum::BUint;
-use ckb_std::{
-    ckb_constants::Source,
-    ckb_types::{packed::WitnessArgsReader, prelude::Reader},
-    error::SysError,
-    high_level::{load_cell_data, load_witness},
-};
+use ckb_std::{ckb_constants::Source, error::SysError, high_level::load_cell_data};
 use sha2::{Digest, Sha256};
 use utils::{add_mod_expand, mul_mod_expand, power_mod};
 
@@ -57,7 +52,7 @@ impl From<SysError> for VoteError {
 const VOTE_CELL_INDEX: usize = 0;
 const PUBLIC_KEY_CELL_DEP_INDEX: usize = 1;
 const CANDIDATE_CELL_DEP_INDEX: usize = 0;
-
+// const WITNESS_INDEX: usize = 1;
 pub fn program_entry() -> i8 {
     ckb_std::debug!("Entered");
     match verify_all() {
@@ -106,7 +101,7 @@ fn verify_signature(
     signature_r_array: &[u8],
     signature_i: &[u8],
 ) -> Result<(), VoteError> {
-    ckb_std::debug!("verify signature, candidate id = {:?}",candidate_id);
+    ckb_std::debug!("verify signature, candidate id = {:?}", candidate_id);
     let mut hasher = Sha256::new();
     hasher.update(candidate_id);
     for i in 0..ring_size {
@@ -148,8 +143,11 @@ fn verify_signature(
             r_power_e,
             n,
         );
+        // ckb_std::debug!("c_mul_r_power_e[{}]={:?}", i, c_mul_r_power_e.digits());
+        // ckb_std::debug!("ch_pi_mul_r[{}]={:?}", i, ch_pi_mul_r.digits());
 
         last_c = compund_hash(&c_mul_r_power_e, &ch_pi_mul_r);
+        // ckb_std::debug!("hash[{}]={:?}", i, last_c.digits());
     }
     // ckb_std::debug!("c0={}, last_c={}", c0, last_c);
     if last_c != c0 {
@@ -165,16 +163,16 @@ fn verify_all() -> Result<(), VoteError> {
     let vote_cell_data = load_cell_data(VOTE_CELL_INDEX, Source::Output)?;
     verify_candidate(&vote_cell_data[0..4])?;
     ckb_std::debug!("candidate verified");
-    let witness_data = load_witness(0, Source::Output)?;
-    let witness_reader = WitnessArgsReader::from_slice(&witness_data).map_err(|e| {
-        ckb_std::debug!("Failed to read witness: {}", e);
-        VoteError::BadWitness
-    })?;
-    let output_type_witness = witness_reader
-        .output_type()
-        .to_opt()
-        .ok_or(VoteError::MissingDependency)?
-        .raw_data();
+    // let witness_data = load_witness(WITNESS_INDEX, Source::Output)?;
+    // let witness_reader = WitnessArgsReader::from_slice(&witness_data).map_err(|e| {
+    //     ckb_std::debug!("Failed to read witness: {}", e);
+    //     VoteError::BadWitness
+    // })?;
+    // let output_type_witness = witness_reader
+    //     .output_type()
+    //     .to_opt()
+    //     .ok_or(VoteError::MissingDependency)?
+    //     .raw_data();
 
     // ckb_std::debug!("witness data {:?}", output_type_witness);
     // ckb_std::debug!("vote cell data {:?}", vote_cell_data);
@@ -185,9 +183,9 @@ fn verify_all() -> Result<(), VoteError> {
         &vote_cell_data[0..4],
         &public_key_cell_data[2..2 + 256 * ring_size],
         &public_key_cell_data[2 + 256 * ring_size..],
-        &output_type_witness[0..256],
-        &output_type_witness[256..256 + 256 * ring_size],
         &vote_cell_data[4..4 + 256],
+        &vote_cell_data[4 + 256..4 + 256 + 256 * ring_size],
+        &vote_cell_data[4 + 256 + 256 * ring_size..4 + 256 + 256 * ring_size + 256],
     )?;
     ckb_std::debug!("signature verified");
     Ok(())

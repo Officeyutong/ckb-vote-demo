@@ -96,16 +96,27 @@ pub fn create_signature(
         BigUint::from_bytes_le(&local_hasher.finalize())
     };
     let qpei = q.modpow(skey.e(), skey.n());
-    c_arr[(signer + 1) % n] = hash(&(&a * &qpei % skey.n()), &(&a * &qpei * &h_val % skey.n()));
+    let sec1 = &a * &qpei % skey.n();
+    let sec2 = (&a * &qpei % skey.n()) * &h_val % skey.n();
+    c_arr[(signer + 1) % n] = hash(&sec1, &sec2);
+    // println!("sec1={:?}", sec1);
+    // println!("sec2={:?}", sec2);
+
     let mut i = (signer + 1) % n;
     while i != signer {
+        // println!("c[{}]={:?}", i, c_arr[i]);
         r_arr[i] = rng.gen_biguint_range(&one, all_keys[i].n());
         let crpe = c_arr[i].clone() * r_arr[i].clone().modpow(all_keys[i].e(), all_keys[i].n())
             % all_keys[i].n();
         let ch_pi_mul_r = (c_arr[i].clone() * sha256_for_integer(all_keys[i].n()) + image.clone())
             * r_arr[i].modpow(all_keys[i].e(), all_keys[i].n())
             % all_keys[i].n();
+        // println!("n[{}]={:?}", i, all_keys[i].n());
+        // println!("crpe[{}]={:?}", i, crpe);
+        // println!("ch_pi_mul_r[{}]={:?}", i, ch_pi_mul_r);
+
         c_arr[(i + 1) % n] = hash(&crpe, &ch_pi_mul_r);
+        // println!("hash[{}]={:?}", i, c_arr[(i + 1) % n]);
         i = (i + 1) % n;
     }
     let phi = (p - one.clone()) * (q - one.clone());

@@ -16,13 +16,13 @@
       ]
     },
     "ring-signature-verify": {
-      "codeHash": "0x7042ecb03e467ad024ca7ce1b89b689d787ee485cf8e1bc514307a3d442f72dc",
+      "codeHash": "0x12d51d926e689437ec95ceb35f495f81f07718aa5587de9f5540030fdbd8c97f",
       "hashType": "data1",
       "cellDeps": [
         {
           "cellDep": {
             "outPoint": {
-              "txHash": "0x31a750b94c4e836f90bca75ee951a9fe7e4ddf49af43950228b890d8a17085c6",
+              "txHash": "0xc72da3f0cf022071e62816ec264129a5532b31214c377229692b8f42aa771fb5",
               "index": 0
             },
             "depType": "code"

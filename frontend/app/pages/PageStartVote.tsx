@@ -6,7 +6,7 @@ import { cccClient } from "../ccc-client";
 import _ from "lodash";
 import * as bigintConversion from 'bigint-conversion'
 
-const CHUNK_SIZE = 600;
+const CHUNK_SIZE = 450;
 
 
 interface VoteTransactions {
