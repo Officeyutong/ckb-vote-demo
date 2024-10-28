@@ -1512,11 +1512,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsa_ring_sign_linkable_wasm"
+name = "rsa_tools"
 version = "0.1.2"
 dependencies = [
  "console_error_panic_hook",
  "getrandom 0.2.15",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
  "rsa_ring_sign_linkable",
  "wasm-bindgen",
  "wasm-bindgen-test",

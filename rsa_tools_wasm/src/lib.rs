@@ -1,5 +1,8 @@
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 use rsa_ring_sign_linkable::{
-    check_size_and_write, create_signature, BigUint, PublicKeyParts, RsaPrivateKey, RsaPublicKey,
+    check_size_and_write, create_signature, BigUint, PrivateKeyParts, PublicKeyParts,
+    RsaPrivateKey, RsaPublicKey,
 };
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -24,7 +27,7 @@ extern "C" {
 
 }
 #[wasm_bindgen]
-pub fn create_signature_wasm(
+pub fn create_ring_signature_wasm(
     n: usize,
     pub_keys_e_arr: &[u8],
     pub_keys_n_arr: &[u8],
@@ -79,4 +82,43 @@ pub fn create_signature_wasm(
         }
     };
     Ok(result)
+}
+
+#[wasm_bindgen(getter_with_clone)]
+/**
+ * Numbers are in little endian
+ */
+pub struct RsaKeyPair {
+    pub n: Vec<u8>,
+    pub e: Vec<u8>,
+    pub p: Vec<u8>,
+    pub q: Vec<u8>,
+    pub d: Vec<u8>,
+}
+
+#[wasm_bindgen]
+pub fn derive_rsa_key_pair_form_rand_seed(seed: &[u8]) -> Result<RsaKeyPair, String> {
+    if seed.len() != 32 {
+        return Err(String::from("Seed must be in 32bytes"));
+    }
+    let mut seed_fixed = [0u8; 32];
+    seed_fixed.copy_from_slice(seed);
+    let mut rng = ChaCha20Rng::from_seed(seed_fixed);
+    let privkey = RsaPrivateKey::new(&mut rng, 2048)
+        .map_err(|e| format!("Failed to generate key pair: {}", e))?;
+    Ok(RsaKeyPair {
+        n: privkey.n().to_bytes_le(),
+        e: privkey.e().to_bytes_le(),
+        p: privkey
+            .primes()
+            .get(0)
+            .ok_or_else(|| format!("Missing first prime number"))?
+            .to_bytes_le(),
+        q: privkey
+            .primes()
+            .get(1)
+            .ok_or_else(|| format!("Missing second prime number"))?
+            .to_bytes_le(),
+        d: privkey.d().to_bytes_le(),
+    })
 }

@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@ckb-ccc/core": "^0.0.14-alpha.0",
+    "@ckb-ccc/connector-react": "^0.0.17-alpha.8",
     "base64url": "^3.0.1",
     "bigint-conversion": "^2.4.3",
     "buffer": "^6.0.3",
@@ -17,7 +17,7 @@
     "next": "14.2.10",
     "react": "^18",
     "react-dom": "^18",
-    "rsa_ring_sign_linkable_wasm": "file:../rsa_ring_sign_linkable_wasm/pkg",
+    "rsa_tools_wasm": "file:../rsa_tools_wasm/pkg",
     "semantic-ui-css": "^2.5.0",
     "semantic-ui-react": "^2.1.5"
   },

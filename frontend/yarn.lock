@@ -19,10 +19,41 @@
   dependencies:
     regenerator-runtime "^0.14.0"
 
-"@ckb-ccc/core@^0.0.14-alpha.0":
-  version "0.0.14"
-  resolved "https://registry.npmmirror.com/@ckb-ccc/core/-/core-0.0.14.tgz#572a67100732b98a780f49a35f72588959babde9"
-  integrity sha512-sOj11Ai9WHJotCiyNq4tDJo7DviGl+GoZRrnebxBWgmySXuMV4KRYMAz2/K+O6rLwk4xLSIvX4BrvIwKsZCeYQ==
+"@ckb-ccc/ccc@0.0.16-alpha.6":
+  version "0.0.16-alpha.6"
+  resolved "https://registry.npmmirror.com/@ckb-ccc/ccc/-/ccc-0.0.16-alpha.6.tgz#f2c043db1044cfec175cee86acdb2c24804571e3"
+  integrity sha512-uttRls9OEUH3OboevJzNeUmyAZYOeX8aWdMJ/fjA+iqo1UgYh306K/FCkTuMGBPowqKyo3s5z0hJMJaADwGulQ==
+  dependencies:
+    "@ckb-ccc/core" "0.1.0-alpha.5"
+    "@ckb-ccc/eip6963" "0.0.16-alpha.5"
+    "@ckb-ccc/joy-id" "0.0.16-alpha.5"
+    "@ckb-ccc/nip07" "0.0.16-alpha.5"
+    "@ckb-ccc/okx" "0.0.16-alpha.5"
+    "@ckb-ccc/rei" "0.0.16-alpha.5"
+    "@ckb-ccc/uni-sat" "0.0.16-alpha.5"
+    "@ckb-ccc/utxo-global" "0.0.16-alpha.5"
+    "@ckb-ccc/xverse" "0.0.15-alpha.6"
+
+"@ckb-ccc/connector-react@^0.0.17-alpha.8":
+  version "0.0.17-alpha.8"
+  resolved "https://registry.npmmirror.com/@ckb-ccc/connector-react/-/connector-react-0.0.17-alpha.8.tgz#c1137145dd67dfb6d75de82225a5766972888e3c"
+  integrity sha512-m8fXmDXKKp0L7o1zAMSuC7tXKtyQUrILqdYkKqoMDx6Yf0v1gYLmh4XW03oH3ec1TMuTgSxzep+Kznsb0rYzUw==
+  dependencies:
+    "@ckb-ccc/connector" "0.0.17-alpha.7"
+    "@lit/react" "^1.0.5"
+
+"@ckb-ccc/connector@0.0.17-alpha.7":
+  version "0.0.17-alpha.7"
+  resolved "https://registry.npmmirror.com/@ckb-ccc/connector/-/connector-0.0.17-alpha.7.tgz#07c4e66d0f9e5b6046601513442e8cc2b5157f83"
+  integrity sha512-L9h+GQoi2MjxdOmiHTDf9x1gaMbpkERrsTVG5ABlyKLr7993oJYavEv/0VK1K+TQBvxrHGnSgeDErP+OPScbhA==
+  dependencies:
+    "@ckb-ccc/ccc" "0.0.16-alpha.6"
+    lit "^3.1.3"
+
+"@ckb-ccc/core@0.1.0-alpha.5":
+  version "0.1.0-alpha.5"
+  resolved "https://registry.npmmirror.com/@ckb-ccc/core/-/core-0.1.0-alpha.5.tgz#90ff2c8e21a63311675dc5fb46ea172f073de4e2"
+  integrity sha512-SaRo31E7cCmT+YZYsebK+2qWF/xyHiyCjOB6hylTpiGQIyx5L3Y1a5ILYR7ew6qjzxLYXxmBIG/baiE56ifY8A==
   dependencies:
     "@joyid/ckb" "^1.0.1"
     "@noble/ciphers" "^0.5.3"
@@ -36,6 +67,67 @@
     ethers "^6.13.1"
     isomorphic-ws "^5.0.0"
     ws "^8.18.0"
+
+"@ckb-ccc/eip6963@0.0.16-alpha.5":
+  version "0.0.16-alpha.5"
+  resolved "https://registry.npmmirror.com/@ckb-ccc/eip6963/-/eip6963-0.0.16-alpha.5.tgz#f6b5bd302e9952fb8af5892b50d149b490c0dceb"
+  integrity sha512-QgargAINBw9vLuEDU0sM2CDe+uSGijKPyaiMgf8I4hiDbJhYvuAWKbifrJMdD8YVrDMrgM7iHZeoCPUv6WlDdQ==
+  dependencies:
+    "@ckb-ccc/core" "0.1.0-alpha.5"
+
+"@ckb-ccc/joy-id@0.0.16-alpha.5":
+  version "0.0.16-alpha.5"
+  resolved "https://registry.npmmirror.com/@ckb-ccc/joy-id/-/joy-id-0.0.16-alpha.5.tgz#833653627783c22bd24986605df13de311b9a57b"
+  integrity sha512-qnUGTXH42vZ+oItXhSjub36nEio7AJ5v4Q2aZ+zM5DbbZ06cw20kdLZVxra6SSnDO/jco1M2LdBVE75U5rE6Ww==
+  dependencies:
+    "@ckb-ccc/core" "0.1.0-alpha.5"
+    "@joyid/ckb" "^1.0.1"
+    "@joyid/common" "^0.2.0"
+
+"@ckb-ccc/nip07@0.0.16-alpha.5":
+  version "0.0.16-alpha.5"
+  resolved "https://registry.npmmirror.com/@ckb-ccc/nip07/-/nip07-0.0.16-alpha.5.tgz#b97c07310172f8bfa7f6ee2bb5a183bde669e500"
+  integrity sha512-WWMLFvxSfXQFfuLRf7WaFYSk18Ppu4DRN4IT/oC5Vry/J7p/g0JJYGt04evBYPDytpZ0VuAoxPSSn8km3qGYSw==
+  dependencies:
+    "@ckb-ccc/core" "0.1.0-alpha.5"
+
+"@ckb-ccc/okx@0.0.16-alpha.5":
+  version "0.0.16-alpha.5"
+  resolved "https://registry.npmmirror.com/@ckb-ccc/okx/-/okx-0.0.16-alpha.5.tgz#b9ab857a3d0b7249acb5bf34bf614f6dcce6dfce"
+  integrity sha512-E5leOp2QV9gyemIqD0U15xCnWE1bEw82ZwusfgBzFPEBvBy5Zrn4WMNslNPxhAe8nswQ06uCGybDxH/rhBPAFQ==
+  dependencies:
+    "@ckb-ccc/core" "0.1.0-alpha.5"
+    "@ckb-ccc/nip07" "0.0.16-alpha.5"
+    "@ckb-ccc/uni-sat" "0.0.16-alpha.5"
+
+"@ckb-ccc/rei@0.0.16-alpha.5":
+  version "0.0.16-alpha.5"
+  resolved "https://registry.npmmirror.com/@ckb-ccc/rei/-/rei-0.0.16-alpha.5.tgz#555c705aad53fadd08d0169160464f8f5368f45e"
+  integrity sha512-t13ubNBSVvp9zjHJ4XDRGlor1jmzHbCQoSmh21RgSmenAsFwFn1Pht7FVWtSkiLgYwlRPG8Mr+tg65xPiM3xzA==
+  dependencies:
+    "@ckb-ccc/core" "0.1.0-alpha.5"
+
+"@ckb-ccc/uni-sat@0.0.16-alpha.5":
+  version "0.0.16-alpha.5"
+  resolved "https://registry.npmmirror.com/@ckb-ccc/uni-sat/-/uni-sat-0.0.16-alpha.5.tgz#22e224e45c9d713a45a4d3072e1a532837f807c1"
+  integrity sha512-B6JRmIfKlSqPqPMV5L/kX6qVCcxforBkEKNuMJeRiIvPDHrIFCXEGwgLISHuEC/6NMT8C6VODTJ7e8ZK3h3V3A==
+  dependencies:
+    "@ckb-ccc/core" "0.1.0-alpha.5"
+
+"@ckb-ccc/utxo-global@0.0.16-alpha.5":
+  version "0.0.16-alpha.5"
+  resolved "https://registry.npmmirror.com/@ckb-ccc/utxo-global/-/utxo-global-0.0.16-alpha.5.tgz#051ad384583398b18dbdde49bd1d92bb745fb121"
+  integrity sha512-fHxeNCVF4yjp30tCmDyMqnMn5h+VKTwt0BKVScRUlNZSCYzVllPi1Oe93AVir0s1Z0TdbtMWz0aV1VtPfiG81g==
+  dependencies:
+    "@ckb-ccc/core" "0.1.0-alpha.5"
+
+"@ckb-ccc/xverse@0.0.15-alpha.6":
+  version "0.0.15-alpha.6"
+  resolved "https://registry.npmmirror.com/@ckb-ccc/xverse/-/xverse-0.0.15-alpha.6.tgz#f84914cbff5b4374ce417a6836b82fe972c8b2d2"
+  integrity sha512-39xYz2oAB6MvAXWf3u0bOQm1mCIazJmgmnpbOe7NFD3KaV7uuTdoLubmLmt6U927Be7UyYbjaBDGYac7eEptmA==
+  dependencies:
+    "@ckb-ccc/core" "0.1.0-alpha.5"
+    valibot "^0.42.1"
 
 "@eslint-community/eslint-utils@^4.2.0":
   version "4.4.0"
@@ -125,7 +217,7 @@
     cross-fetch "4.0.0"
     uncrypto "^0.1.3"
 
-"@joyid/common@0.2.0":
+"@joyid/common@0.2.0", "@joyid/common@^0.2.0":
   version "0.2.0"
   resolved "https://registry.npmmirror.com/@joyid/common/-/common-0.2.0.tgz#06c937ff1a8810037c19bb200ccf57400d5db4f8"
   integrity sha512-WBZtgdEccWxjiGHIoDgRFIbnC42ZvmfvFRCTxmx9D4BLvtiFdhAa+g70lUmiHwO28GjgHIHgzHRGNRdLuk81xw==
@@ -169,6 +261,23 @@
   version "1.1.5"
   resolved "https://registry.npmmirror.com/@juanelas/base64/-/base64-1.1.5.tgz#d43b3c78e32e609d9b17a15e4f1b6342c9ca1238"
   integrity sha512-mjAF27LzwfYobdwqnxZgeucbKT5wRRNvILg3h5OvCWK+3F7mw/A1tnjHnNiTYtLmTvT/bM1jA5AX7eQawDGs1w==
+
+"@lit-labs/ssr-dom-shim@^1.2.0":
+  version "1.2.1"
+  resolved "https://registry.npmmirror.com/@lit-labs/ssr-dom-shim/-/ssr-dom-shim-1.2.1.tgz#2f3a8f1d688935c704dbc89132394a41029acbb8"
+  integrity sha512-wx4aBmgeGvFmOKucFKY+8VFJSYZxs9poN3SDNQFF6lT6NrQUnHiPB2PWz2sc4ieEcAaYYzN+1uWahEeTq2aRIQ==
+
+"@lit/react@^1.0.5":
+  version "1.0.6"
+  resolved "https://registry.npmmirror.com/@lit/react/-/react-1.0.6.tgz#9518ba471157becd1a3e6fb7ddc16bcef16be64e"
+  integrity sha512-QIss8MPh6qUoFJmuaF4dSHts3qCsA36S3HcOLiNPShxhgYPr4XJRnCBKPipk85sR9xr6TQrOcDMfexwbNdJHYA==
+
+"@lit/reactive-element@^2.0.4":
+  version "2.0.4"
+  resolved "https://registry.npmmirror.com/@lit/reactive-element/-/reactive-element-2.0.4.tgz#8f2ed950a848016383894a26180ff06c56ae001b"
+  integrity sha512-GFn91inaUa2oHLak8awSIigYz0cU0Payr1rcFsrkf5OJ5eSPxElyZfKh0f2p9FsTiZWXQdWGJeXZICEfXXYSXQ==
+  dependencies:
+    "@lit-labs/ssr-dom-shim" "^1.2.0"
 
 "@nervosnetwork/ckb-sdk-utils@^0.109.2":
   version "0.109.3"
@@ -382,6 +491,11 @@
   dependencies:
     "@types/prop-types" "*"
     csstype "^3.0.2"
+
+"@types/trusted-types@^2.0.2":
+  version "2.0.7"
+  resolved "https://registry.npmmirror.com/@types/trusted-types/-/trusted-types-2.0.7.tgz#baccb07a970b91707df3a3e8ba6896c57ead2d11"
+  integrity sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==
 
 "@typescript-eslint/parser@^5.4.2 || ^6.0.0 || 7.0.0 - 7.2.0":
   version "7.2.0"
@@ -2141,6 +2255,31 @@ lines-and-columns@^1.1.6:
   resolved "https://registry.npmmirror.com/lines-and-columns/-/lines-and-columns-1.2.4.tgz#eca284f75d2965079309dc0ad9255abb2ebc1632"
   integrity sha512-7ylylesZQ/PV29jhEDl3Ufjo6ZX7gCqJr5F7PKrqc93v7fzSymt1BpwEU8nAUXs8qzzvqhbjhK5QZg6Mt/HkBg==
 
+lit-element@^4.1.0:
+  version "4.1.1"
+  resolved "https://registry.npmmirror.com/lit-element/-/lit-element-4.1.1.tgz#07905992815076e388cf6f1faffc7d6866c82007"
+  integrity sha512-HO9Tkkh34QkTeUmEdNYhMT8hzLid7YlMlATSi1q4q17HE5d9mrrEHJ/o8O2D0cMi182zK1F3v7x0PWFjrhXFew==
+  dependencies:
+    "@lit-labs/ssr-dom-shim" "^1.2.0"
+    "@lit/reactive-element" "^2.0.4"
+    lit-html "^3.2.0"
+
+lit-html@^3.2.0:
+  version "3.2.1"
+  resolved "https://registry.npmmirror.com/lit-html/-/lit-html-3.2.1.tgz#8fc49e3531ee5947e4d93e8a5aa642ab1649833b"
+  integrity sha512-qI/3lziaPMSKsrwlxH/xMgikhQ0EGOX2ICU73Bi/YHFvz2j/yMCIrw4+puF2IpQ4+upd3EWbvnHM9+PnJn48YA==
+  dependencies:
+    "@types/trusted-types" "^2.0.2"
+
+lit@^3.1.3:
+  version "3.2.1"
+  resolved "https://registry.npmmirror.com/lit/-/lit-3.2.1.tgz#d6dd15eac20db3a098e81e2c85f70a751ff55592"
+  integrity sha512-1BBa1E/z0O9ye5fZprPtdqnc0BFzxIxTTOO/tQFmyC/hj1O3jL4TfmLBw0WEwjAokdLwpclkvGgDJwTIh0/22w==
+  dependencies:
+    "@lit/reactive-element" "^2.0.4"
+    lit-element "^4.1.0"
+    lit-html "^3.2.0"
+
 locate-path@^6.0.0:
   version "6.0.0"
   resolved "https://registry.npmmirror.com/locate-path/-/locate-path-6.0.0.tgz#55321eb309febbc59c4801d931a72452a681d286"
@@ -2695,8 +2834,8 @@ ripemd160@^2.0.0, ripemd160@^2.0.1:
     hash-base "^3.0.0"
     inherits "^2.0.1"
 
-"rsa_ring_sign_linkable_wasm@file:../rsa_ring_sign_linkable_wasm/pkg":
-  version "0.1.1"
+"rsa_tools_wasm@file:../rsa_tools_wasm/pkg":
+  version "0.1.2"
 
 run-parallel@^1.1.9:
   version "1.2.0"
@@ -3204,6 +3343,11 @@ util-deprecate@^1.0.1, util-deprecate@^1.0.2:
   version "1.0.2"
   resolved "https://registry.npmmirror.com/util-deprecate/-/util-deprecate-1.0.2.tgz#450d4dc9fa70de732762fbd2d4a28981419a0ccf"
   integrity sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==
+
+valibot@^0.42.1:
+  version "0.42.1"
+  resolved "https://registry.npmmirror.com/valibot/-/valibot-0.42.1.tgz#a31183d8e9d7552f98e22ca0977172cab8815188"
+  integrity sha512-3keXV29Ar5b//Hqi4MbSdV7lfVp6zuYLZuA9V1PvQUsXqogr+u5lvLPLk3A4f74VUXDnf/JfWMN6sB+koJ/FFw==
 
 varuint-bitcoin@^1.0.1:
   version "1.1.2"

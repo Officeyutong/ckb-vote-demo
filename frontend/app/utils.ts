@@ -1,10 +1,9 @@
-import { Address, ccc, Script, ScriptLike, SignerCkbPrivateKey } from "@ckb-ccc/core";
+import { Address, ccc, CellDep, Script, ScriptLike, Signer, SignerCkbPrivateKey } from "@ckb-ccc/core";
 import { useCallback, useState } from "react";
 import { InputOnChangeData } from "semantic-ui-react";
-import { cccClient } from "./ccc-client";
 import * as bigintConversion from 'bigint-conversion'
 import base64url from "base64url";
-
+import { Buffer } from "buffer";
 export type onChangeType = ((event: React.ChangeEvent<HTMLInputElement>, data: InputOnChangeData) => void);
 
 export const useInputValue: (text?: string) => { value: string; onChange: onChangeType } = (text: string = "") => {
@@ -26,25 +25,6 @@ export function convertJWKNumber(input: string): bigint {
     base64url
     return BigInt("0x00" + base64url.toBuffer(input).toString("hex"))
 }
-export type Account = {
-    lockScript: Script;
-    address: string;
-    pubKey: string;
-    signer: SignerCkbPrivateKey;
-};
-
-export const generateAccountFromPrivateKey = async (
-    privKey: string
-): Promise<Account> => {
-    const signer = new ccc.SignerCkbPrivateKey(cccClient, privKey);
-    const lock = await signer.getAddressObjSecp256k1();
-    return {
-        lockScript: lock.script,
-        address: lock.toString(),
-        pubKey: signer.publicKey,
-        signer
-    };
-};
 
 export interface CandidateEntry {
     id: Uint8Array;
@@ -170,10 +150,13 @@ export function decodePubkeyIndexCell(buf: Buffer): PubkeyIndexEntry[] {
 }
 
 export interface PreparedTx { sendTx: () => Promise<string>; tx: ccc.Transaction };
-export async function publishBytesAsCell(bytes: ArrayBuffer, lockScript: ScriptLike, signer: SignerCkbPrivateKey, dataName: string): Promise<PreparedTx> {
+export async function publishBytesAsCell(bytes: ArrayBuffer, lockScript: ScriptLike, signer: Signer, dataName: string): Promise<PreparedTx> {
     const tx = ccc.Transaction.from({
         outputs: [{ lock: lockScript }],
-        outputsData: [bytes]
+        outputsData: [bytes],
+        cellDeps: [
+            CellDep.from({ outPoint: { txHash: "0x75be96e1871693f030db27ddae47890a28ab180e88e36ebb3575d9f1377d3da7", index: BigInt(0) }, depType: "depGroup" })
+        ]
     });
 
 
@@ -186,6 +169,12 @@ export async function publishBytesAsCell(bytes: ArrayBuffer, lockScript: ScriptL
         sendTx: async () => {
             await tx.completeFeeBy(signer, 1000);
             await tx.completeInputsAll(signer);
+            console.log(tx);
+            // const newTx = await signer.signTransaction(tx);
+            // console.log("Signed new tx",newTx);
+            // debugger;
+            // console.log(tx.stringify());
+            console.log(tx.hash());
             return await signer.sendTransaction(tx);
         },
         tx
@@ -193,7 +182,8 @@ export async function publishBytesAsCell(bytes: ArrayBuffer, lockScript: ScriptL
 }
 
 export interface AccountData {
-    account: Account;
-    address: Address;
+    // account: Account;
+    addresses: Address[];
     balance: bigint;
+    signer: Signer;
 }

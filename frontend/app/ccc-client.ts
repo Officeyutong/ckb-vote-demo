@@ -1,5 +1,6 @@
+import { ccc, CellDepInfoLike, KnownScript, Script } from "@ckb-ccc/connector-react";
 import offCKB, { Network } from "../offckb.config";
-import { ccc, CellDepInfoLike, KnownScript, Script } from "@ckb-ccc/core";
+// import { ccc, CellDepInfoLike, KnownScript, Script } from "@ckb-ccc/core";
 
 export const DEVNET_SCRIPTS: Record<
   string,
@@ -15,15 +16,13 @@ export const DEVNET_SCRIPTS: Record<
 };
 
 export function buildCccClient(network: Network) {
+  console.log("Creating client with network: ", network);
   const client =
     network === "mainnet"
       ? new ccc.ClientPublicMainnet()
       : network === "testnet"
-      ? new ccc.ClientPublicTestnet()
-      : new ccc.ClientPublicTestnet({
-          url: offCKB.rpcUrl,
-          scripts: DEVNET_SCRIPTS as any,
-        });
+        ? new ccc.ClientPublicTestnet()
+        : new ccc.ClientPublicTestnet(offCKB.rpcUrl, 1000, DEVNET_SCRIPTS);
 
   return client;
 }

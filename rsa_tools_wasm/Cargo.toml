@@ -1,5 +1,5 @@
 [package]
-name = "rsa_ring_sign_linkable_wasm"
+name = "rsa_tools"
 version = "0.1.2"
 edition = "2021"
 
@@ -9,6 +9,8 @@ console_error_panic_hook = { version = "0.1.7" }
 wasm-bindgen = "0.2.84"
 web-sys = "0.3.72"
 getrandom = { version = "0.2.15", features = ["js"] }
+rand = { version = "0.8.5", default-features = false }
+rand_chacha = {version = "0.3.1",default-features = false}
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.34"

@@ -50,7 +50,7 @@ build: build-wasm
 
 build-wasm:
 	cargo install wasm-pack
-	cd rsa_ring_sign_linkable_wasm && wasm-pack build --target web --release
+	cd rsa_tools_wasm && wasm-pack build --target web --release
 
 # Run a single make task for a specific contract. For example:
 #

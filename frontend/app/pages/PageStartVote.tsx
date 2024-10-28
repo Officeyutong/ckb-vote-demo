@@ -1,10 +1,10 @@
 import { useRef, useState } from "react";
 import { Button, Dimmer, Divider, Form, Input, InputOnChangeData, Loader, Message, Modal, Progress, Table, TextArea } from "semantic-ui-react";
-import { Address, ccc } from "@ckb-ccc/core";
-import { Account, AccountData, CandidateEntry, convertJWKNumber, encodeCandidate, encodePubKeyArray, encodePubkeyIndexCell, generateAccountFromPrivateKey, PreparedTx, publishBytesAsCell, randCandidateId, RSAPubKey, uint8ArrToHex, useInputValue } from "../utils";
+import { AccountData, CandidateEntry, convertJWKNumber, encodeCandidate, encodePubKeyArray, encodePubkeyIndexCell, PreparedTx, publishBytesAsCell, randCandidateId, RSAPubKey, uint8ArrToHex, useInputValue } from "../utils";
 import { cccClient } from "../ccc-client";
 import _ from "lodash";
 import * as bigintConversion from 'bigint-conversion'
+import { useCcc } from "@ckb-ccc/connector-react";
 
 const CHUNK_SIZE = 450;
 
@@ -52,8 +52,6 @@ interface StageSended {
 
 
 const PageStartVote: React.FC<{}> = () => {
-    // A private key in devnet
-    const privateKey = useInputValue("0xfc8142dc0a6c1dc9102696e7ca730b8c05e233549ea924fafa477f5086d94ac3");
     const [candidates, setCandidates] = useState<CandidateEntry[]>([
         { id: randCandidateId(), description: "test" }
     ]);
@@ -68,14 +66,19 @@ const PageStartVote: React.FC<{}> = () => {
     const [progressText, setProgressText] = useState<string | null>(null);
 
     const [stage, setStage] = useState<StageInit | StageAccountLoaded | StageDataPrepared | StageSended>({ stage: Stage.INIT });
-
+    const cccState = useCcc();
     const loadAccount = async () => {
         try {
             setLoading(true);
-            const account = await generateAccountFromPrivateKey(privateKey.value);
-            const address = await ccc.Address.fromString(account.address, cccClient);
-            const balance = await cccClient.getBalance([address.script]);
-            setStage({ stage: Stage.ACCOUNT_LOADED, accountData: { account, address, balance } });
+            const signer = cccState.signerInfo?.signer;
+            if (!signer) {
+                alert("Bad signer");
+                return;
+            }
+
+            const addresses = await signer.getAddressObjs();
+            const balance = await cccClient.getBalance(addresses.map(s => s.script));
+            setStage({ stage: Stage.ACCOUNT_LOADED, accountData: { addresses, balance, signer } });
         } catch (e) { console.error(e); alert(e); } finally {
             setLoading(false);
 
@@ -121,21 +124,21 @@ const PageStartVote: React.FC<{}> = () => {
 
             }
             const accountData = stage.accountData;
-            const signer = accountData.account.signer;
+            const signer = accountData.signer;
             const chunkCount = Math.ceil(pubKeys.length / CHUNK_SIZE);
             setTotalCount(1 + chunkCount);
             let candidateTx;
             {
                 setProgressText("Generating candidate data..");
                 const candidatesData = encodeCandidate(candidates);
-                candidateTx = await publishBytesAsCell(candidatesData, accountData.address.script, signer, "candidate");
+                candidateTx = await publishBytesAsCell(candidatesData, accountData.addresses[0].script, signer, "candidate");
                 setDoneCount(1);
             }
             const pubKeysTx: PreparedTx[] = [];
             for (const [chunk, idx] of _(pubKeys).chunk(CHUNK_SIZE).map((val, idx) => [val, idx] as [RSAPubKey[], number]).value()) {
                 setProgressText(`Generating public key data (${idx + 1}/${chunkCount})`);
                 const encoded = encodePubKeyArray(chunk);
-                pubKeysTx.push(await publishBytesAsCell(encoded, accountData.address.script, signer, "pubkey chunk"));
+                pubKeysTx.push(await publishBytesAsCell(encoded, accountData.addresses[0].script, signer, "pubkey chunk"));
                 setDoneCount(c => c + 1);
             }
             let requiredCkb = BigInt(0);
@@ -181,7 +184,7 @@ const PageStartVote: React.FC<{}> = () => {
             txHash: new Uint8Array(bigintConversion.hexToBuf(value, true) as ArrayBuffer)
         })))
         console.log(pubKeyHashes);
-        const pubKeyPreparedTx = await publishBytesAsCell(pubKeyIndexData, stage.accountData.account.lockScript, stage.accountData.account.signer, "public key index");
+        const pubKeyPreparedTx = await publishBytesAsCell(pubKeyIndexData, stage.accountData.addresses[0].script, stage.accountData.signer, "public key index");
         const pubkeyIndexHash = await pubKeyPreparedTx.sendTx();
         console.log(pubkeyIndexHash);
         setStage({
@@ -228,10 +231,10 @@ const PageStartVote: React.FC<{}> = () => {
             </Message.Content>
         </Message>
         <Form>
-            <Form.Field>
+            {/* <Form.Field>
                 <label>Private key of administrator</label>
                 <Input {...privateKey} disabled={stage.stage >= Stage.ACCOUNT_LOADED}></Input>
-            </Form.Field>
+            </Form.Field> */}
             <Form.Button color="green" onClick={loadAccount}>{stage.stage == Stage.INIT ? "Load account" : "Refresh balance"}</Form.Button>
             {(stage.stage === Stage.ACCOUNT_LOADED || stage.stage === Stage.DATA_PREPARED || stage.stage === Stage.SENDED) && <>
                 <Form.Field>

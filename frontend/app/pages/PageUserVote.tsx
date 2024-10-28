@@ -1,11 +1,11 @@
 import { Button, Dimmer, Form, Input, Loader, Message, Modal, Progress, Table, TextArea } from "semantic-ui-react";
-import { AccountData, CandidateEntry, convertJWKNumber, decodeCandidate, decodePubKeyArray, decodePubkeyIndexCell, generateAccountFromPrivateKey, PubkeyIndexEntry, RSAPubKey, uint8ArrToHex, useInputValue } from "../utils";
+import { AccountData, CandidateEntry, convertJWKNumber, decodeCandidate, decodePubKeyArray, decodePubkeyIndexCell, PubkeyIndexEntry, RSAPubKey, uint8ArrToHex, useInputValue } from "../utils";
 import { useState } from "react";
 import { cccClient } from "../ccc-client";
 import { ccc } from "@ckb-ccc/core";
 import { bigintToBuf, bufToHex, hexToBuf } from "bigint-conversion";
 import _ from "lodash";
-import __wbg_init, { create_signature_wasm } from "rsa_ring_sign_linkable_wasm";
+import __wbg_init, { create_ring_signature_wasm, derive_rsa_key_pair_form_rand_seed } from "rsa_tools_wasm";
 import offCKBConfig from "@/offckb.config";
 enum Stage {
     INIT = 0,
