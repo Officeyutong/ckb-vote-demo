@@ -231,10 +231,6 @@ const PageStartVote: React.FC<{}> = () => {
             </Message.Content>
         </Message>
         <Form>
-            {/* <Form.Field>
-                <label>Private key of administrator</label>
-                <Input {...privateKey} disabled={stage.stage >= Stage.ACCOUNT_LOADED}></Input>
-            </Form.Field> */}
             <Form.Button color="green" onClick={loadAccount}>{stage.stage == Stage.INIT ? "Load account" : "Refresh balance"}</Form.Button>
             {(stage.stage === Stage.ACCOUNT_LOADED || stage.stage === Stage.DATA_PREPARED || stage.stage === Stage.SENDED) && <>
                 <Form.Field>

@@ -12,6 +12,7 @@ const PageConnectWallet: React.FC<{}> = () => {
         wallet,
         signerInfo,
     } = cccConnector.useCcc();
+    console.log(wallet);
     const [addresses, setAddresses] = useState<string[] | null>(null);
     const [internalAddress, setInternalAddress] = useState("");
     const [recommendedAddress, settRecommendedAddress] = useState("");
@@ -23,7 +24,6 @@ const PageConnectWallet: React.FC<{}> = () => {
     useEffect(() => {
         if (signerInfo !== undefined && !loaded && !loadingRef.current) {
             (async () => {
-                // loadingRef.current = true;
                 const signer = signerInfo.signer;
                 const addresses = await signer.getAddressObjs();
 
@@ -34,7 +34,6 @@ const PageConnectWallet: React.FC<{}> = () => {
                 setLoaded(true);
                 setInternalAddress(await signer.getInternalAddress());
                 settRecommendedAddress(await signer.getRecommendedAddress());
-                // loadingRef.current = false;
             })();
         }
     }, [loaded, signerInfo]);

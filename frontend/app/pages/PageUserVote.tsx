@@ -7,6 +7,7 @@ import { bigintToBuf, bufToHex, hexToBuf } from "bigint-conversion";
 import _ from "lodash";
 import __wbg_init, { create_ring_signature_wasm, derive_rsa_key_pair_form_rand_seed } from "rsa_tools_wasm";
 import offCKBConfig from "@/offckb.config";
+import { useSigner } from "@ckb-ccc/connector-react";
 enum Stage {
     INIT = 0,
     CANDIDATE_LOADED = 1,
@@ -28,6 +29,7 @@ interface StageCandidateLoaded {
 }
 
 interface StageVoted extends Omit<StageCandidateLoaded, "stage"> {
+    txHash: string;
     stage: Stage.VOTED;
 }
 
@@ -40,7 +42,6 @@ function encodeBigIntArray(arr: bigint[], entrySize: number): Uint8Array {
         idx += entrySize;
     }
     const result = new Uint8Array(buf.buffer);
-    // console.log(arr, "->", result);
     return result;
 }
 
@@ -63,22 +64,26 @@ const PageUserVote: React.FC<{}> = () => {
     const [progressText, setProgressText] = useState<string | null>(null);
 
     // A private key from devnet account
-    const accountPrivateKey = useInputValue("0xa5808e79c243d8e026a034273ad7a5ccdcb2f982392fd0230442b1734c98a4c2");
-    const candidateHash = useInputValue("0x205284fab97f8a408a15b326fa84f0046780ce882ba1c7e5bbdb3602dcba51aa");
-    const publicKeyIndexCell = useInputValue("0x79b7f4ba0faa8eca3ab4dd6f3d9060aa82b069add49c3083c14ee47551522f49");
+    const candidateHash = useInputValue("0xaf03599de868cda5e010dc495c71888d3d62f990f7132cdff8cd76b614cd5582");
+    const publicKeyIndexCell = useInputValue("0x43f24b3b3b8dfd948d57cacd75a86224eb86a75793ea2d576008ecad1dc2de1d");
     const [signPrivateKey, setSignPrivateKey] = useState(EXAMPLE_PRIVATE_KEY)
     const [loading, setLoading] = useState(false);
     const [selectedCandidate, setSelectedCandidate] = useState<CandidateEntry | null>(null);
+    const signer = useSigner();
     console.log(stage);
     const doLoadCandidateAndAccount = async () => {
+        if (!signer) {
+            alert("Bad signer");
+            return;
+        }
         try {
             setLoading(true);
             setDoneCount(0);
             setProgressText("Fetching base data..");
             setTotalCount(3);
-            const [candidateTx, account, pubkeyIndexTx] = await Promise.all([
+            const [candidateTx, addressObjs, pubkeyIndexTx] = await Promise.all([
                 cccClient.getTransaction(candidateHash.value),
-                generateAccountFromPrivateKey(accountPrivateKey.value),
+                signer.getAddressObjs(),
                 cccClient.getTransaction(publicKeyIndexCell.value),
 
             ]);
@@ -110,17 +115,13 @@ const PageUserVote: React.FC<{}> = () => {
                 }))
                 setDoneCount(c => c + 1);
             }
-            const [address, balance] = await Promise.all([
-                ccc.Address.fromString(account.address, cccClient),
-                cccClient.getBalance([account.lockScript])
-            ]);
-
+            const balance = await signer.getBalance();
 
             setStage({
                 stage: Stage.CANDIDATE_LOADED,
                 candidate: decodeCandidate(Buffer.from(hexToBuf(candidateTx.transaction.outputsData[0], true) as ArrayBuffer)),
                 accountData: {
-                    account, address, balance
+                    addresses: addressObjs, balance, signer
                 },
                 pubKeyIndex,
                 pubKeys
@@ -162,7 +163,7 @@ const PageUserVote: React.FC<{}> = () => {
             setDoneCount(1);
             setProgressText("Creating signature..");
             await __wbg_init();
-            const signature = create_signature_wasm(
+            const signature = create_ring_signature_wasm(
                 index.keys.length,
                 encodeBigIntArray(index.keys.map(s => s.e), 4),
                 encodeBigIntArray(index.keys.map(s => s.n), 256),
@@ -181,13 +182,12 @@ const PageUserVote: React.FC<{}> = () => {
                 cellDeps: [
                     ccc.CellDep.from({ outPoint: { txHash: candidateHash.value, index: 0 }, depType: 0 }),
                     ccc.CellDep.from({ outPoint: { txHash: index.index.txHash, index: index.index.index }, depType: 0 }),
-                    script.cellDeps[0].cellDep
-                    // ccc.CellDep.from({ outPoint: { txHash: candidateHash.value, index: 0 }, depType: 0 }),
-                    // ccc.CellDep.from({ outPoint: { txHash: offCKBConfig.myScripts["ring-signature-verify"]!.codeHash, index: 0 }, depType: 0 }),
+                    script.cellDeps[0].cellDep,
                 ],
                 outputs: [
                     {
-                        lock: stage.accountData.account.lockScript, type: new ccc.Script(
+                        lock: stage.accountData.addresses[0].script,
+                        type: new ccc.Script(
                             script.codeHash,
                             script.hashType,
                             "0x00"
@@ -197,23 +197,25 @@ const PageUserVote: React.FC<{}> = () => {
                 outputsData: [
                     new Uint8Array([
                         ...selectedCandidate.id,
-                        ...signature.c,
-                        ...signature.r_arr,
                         ...signature.i])
                 ],
 
             });
 
-            // tx.
-            await tx.completeFeeBy(stage.accountData.account.signer, 1000000);
-            await tx.completeInputsAll(stage.accountData.account.signer);
-            const newTx = await stage.accountData.account.signer.signTransaction(tx);
-            // newTx.setWitnessArgsAt(1, new ccc.WitnessArgs(undefined, undefined, bufToHex(new Uint8Array([...signature.c, ...signature.r_arr]), true) as `0x${string}`))
-
+            await tx.completeFeeBy(stage.accountData.signer, 1000000);
+            await tx.completeInputsAll(stage.accountData.signer);
+            const rawWitness = tx.getWitnessArgsAt(0);
+            console.log("raw witness", rawWitness);
+            tx.setWitnessArgsAt(0, new ccc.WitnessArgs(rawWitness?.lock, rawWitness?.inputType, bufToHex(new Uint8Array([...signature.c, ...signature.r_arr]), true) as `0x${string}`))
+            const newTx = await stage.accountData.signer.signTransaction(tx);
             console.log(newTx);
+            console.log(newTx.hash());
             const txHash = await cccClient.sendTransaction(newTx);
-
-            console.log(txHash);
+            setStage({
+                ...stage,
+                stage: Stage.VOTED,
+                txHash
+            })
         } catch (e) {
             console.error(e);
             alert(e);
@@ -238,10 +240,6 @@ const PageUserVote: React.FC<{}> = () => {
             </Message.Content>
         </Message>
         <Form>
-            <Form.Field>
-                <label>Account private key</label>
-                <Input disabled={stage.stage !== Stage.INIT} {...accountPrivateKey}></Input>
-            </Form.Field>
             <Form.Field>
                 <label>Candidate cell hash</label>
                 <Input disabled={stage.stage !== Stage.INIT} {...candidateHash}></Input>
@@ -285,10 +283,17 @@ const PageUserVote: React.FC<{}> = () => {
                         </Table.Body>
                     </Table>
                 </Form.Field>
-                <Form.Button onClick={doVote} color="green">
+
+                {stage.stage === Stage.CANDIDATE_LOADED && <Form.Button onClick={doVote} color="green">
                     Vote
-                </Form.Button>
+                </Form.Button>}
             </>}
+            {stage.stage === Stage.VOTED && <Message info>
+                <Message.Header>Successfully voted</Message.Header>
+                <Message.Content>
+                    Your transaction hash: {stage.txHash}
+                </Message.Content>
+            </Message>}
         </Form>
     </>
 };

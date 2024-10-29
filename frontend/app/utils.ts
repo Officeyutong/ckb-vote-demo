@@ -154,9 +154,9 @@ export async function publishBytesAsCell(bytes: ArrayBuffer, lockScript: ScriptL
     const tx = ccc.Transaction.from({
         outputs: [{ lock: lockScript }],
         outputsData: [bytes],
-        cellDeps: [
-            CellDep.from({ outPoint: { txHash: "0x75be96e1871693f030db27ddae47890a28ab180e88e36ebb3575d9f1377d3da7", index: BigInt(0) }, depType: "depGroup" })
-        ]
+        // cellDeps: [
+        //     CellDep.from({ outPoint: { txHash: "0x75be96e1871693f030db27ddae47890a28ab180e88e36ebb3575d9f1377d3da7", index: BigInt(0) }, depType: "depGroup" })
+        // ]
     });
 
 
@@ -182,7 +182,6 @@ export async function publishBytesAsCell(bytes: ArrayBuffer, lockScript: ScriptL
 }
 
 export interface AccountData {
-    // account: Account;
     addresses: Address[];
     balance: bigint;
     signer: Signer;

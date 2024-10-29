@@ -1,14 +1,14 @@
 {
   "devnet": {
-    "hash-lock": {
-      "codeHash": "0x23f0d679c3e159789afe7276b6323c56ee2d1258eb1a6d4c9f5f44729fbc511e",
-      "hashType": "type",
+    "hello-world": {
+      "codeHash": "0x3a7677fa4413de55c74518819573c6abdfd056974a3093d4b883736956b6a12c",
+      "hashType": "data1",
       "cellDeps": [
         {
           "cellDep": {
             "outPoint": {
-              "txHash": "0xbd699868ebee5eeeb778192b0dd1109711dbaf3431659c7581282ecdcdaf3d80",
-              "index": null
+              "txHash": "0x408be8980d7bfc9cea3bf172f9bbafdab1f6833e58bde39d48c328f12c2a2ee9",
+              "index": 0
             },
             "depType": "code"
           }
@@ -16,13 +16,13 @@
       ]
     },
     "ring-signature-verify": {
-      "codeHash": "0x12d51d926e689437ec95ceb35f495f81f07718aa5587de9f5540030fdbd8c97f",
+      "codeHash": "0xae06de2aed48a6c6d2423d3820a842f004f690951577a3cedec1b324f62e8619",
       "hashType": "data1",
       "cellDeps": [
         {
           "cellDep": {
             "outPoint": {
-              "txHash": "0xc72da3f0cf022071e62816ec264129a5532b31214c377229692b8f42aa771fb5",
+              "txHash": "0x87231ce0768ae45516e7b5c87fda6ef8551e55cb62757a75184aeb8c59852dde",
               "index": 0
             },
             "depType": "code"

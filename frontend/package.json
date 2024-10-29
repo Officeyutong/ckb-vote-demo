@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@ckb-ccc/connector-react": "^0.0.17-alpha.8",
+    "@ckb-ccc/connector-react": "^v0.0.11-alpha.3",
     "base64url": "^3.0.1",
     "bigint-conversion": "^2.4.3",
     "buffer": "^6.0.3",

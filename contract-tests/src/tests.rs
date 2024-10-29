@@ -4,7 +4,7 @@ use crate::Loader;
 use ckb_testtool::builtin::ALWAYS_SUCCESS;
 use ckb_testtool::bytes::Bytes;
 use ckb_testtool::ckb_types::core::TransactionBuilder;
-use ckb_testtool::ckb_types::packed::{CellDep, CellInput, CellOutput, ScriptOpt};
+use ckb_testtool::ckb_types::packed::{CellDep, CellInput, CellOutput, ScriptOpt, WitnessArgs};
 use ckb_testtool::ckb_types::prelude::Builder;
 use ckb_testtool::ckb_types::prelude::{Entity, Pack};
 use ckb_testtool::{bytes::BufMut, ckb_types::packed::OutPoint, context::Context};
@@ -59,7 +59,6 @@ fn prepare(ctx: &mut Context) -> PreparedState {
                 num_buf.resize(4, 0);
                 buf.write_all(&num_buf).unwrap();
             }
-            // println!("Key cell {} = {:?}", idx, buf);
             ctx.deploy_cell(buf.into())
         })
         .collect::<Vec<_>>();
@@ -95,7 +94,6 @@ fn prepare(ctx: &mut Context) -> PreparedState {
             }
             buf.write_all(&str_bytes).unwrap()
         }
-        // println!("Candidate cell data {:?}", buf);
         ctx.deploy_cell(buf.into())
     };
     PreparedState {
@@ -130,12 +128,6 @@ fn test_verify_signature() {
         &selected_candidate.id,
     )
     .unwrap();
-    // println!(
-    //     "signer_block={},signer_index={},signer={}",
-    //     signer_block, signer_index, signer
-    // );
-    // println!("signature={:?}", signature);
-    // println!("selectted candidate {:?}", selected_candidate);
     let always_success_script_op = ctx.deploy_cell(ALWAYS_SUCCESS.clone());
     let always_success_script = ctx
         .build_script(&always_success_script_op, Default::default())
@@ -172,12 +164,7 @@ fn test_verify_signature() {
     let (tx_output, tx_output_data) = {
         let mut cell_data = vec![0u8; 0];
         cell_data.write_all(&selected_candidate.id).unwrap();
-        check_size_and_write(&mut cell_data, &signature.c, 256).unwrap();
-        for item in signature.r_and_pubkey.iter() {
-            check_size_and_write(&mut cell_data, &item.r, 256).unwrap();
-        }
         check_size_and_write(&mut cell_data, &signature.i, 256).unwrap();
-        // println!("Vote cell data {:?}", cell_data);
         let type_script = ctx.build_script(&script_out_point, Bytes::new()).unwrap();
         (
             vec![CellOutput::new_builder()
@@ -187,65 +174,57 @@ fn test_verify_signature() {
             vec![Bytes::from(cell_data)],
         )
     };
-    // let witness = {
-    //     let mut witness_data = vec![0u8; 0];
-    //     check_size_and_write(&mut witness_data, &signature.c, 256).unwrap();
-    //     for item in signature.r_and_pubkey.iter() {
-    //         check_size_and_write(&mut witness_data, &item.r, 256).unwrap();
-    //     }
-    //     // println!("witness data={:?}", witness_data);
-    //     vec![
-    //         WitnessArgs::new_builder().build().as_bytes().pack(),
-    //         WitnessArgs::new_builder()
-    //             .output_type(Some(Bytes::from(witness_data)).pack())
-    //             .lock(Option::<Bytes>::None.pack())
-    //             .input_type(Option::<Bytes>::None.pack())
-    //             .build()
-    //             .as_bytes()
-    //             .pack(),
-    //     ]
-    // };
+    let witness = {
+        let mut witness_data = vec![0u8; 0];
+        check_size_and_write(&mut witness_data, &signature.c, 256).unwrap();
+        for item in signature.r_and_pubkey.iter() {
+            check_size_and_write(&mut witness_data, &item.r, 256).unwrap();
+        }
+        vec![WitnessArgs::new_builder()
+            .output_type(Some(Bytes::from(witness_data)).pack())
+            .lock(Option::<Bytes>::None.pack())
+            .input_type(Option::<Bytes>::None.pack())
+            .build()
+            .as_bytes()
+            .pack()]
+    };
     let tx = {
         let tx = TransactionBuilder::default()
             .cell_deps(cell_deps.clone())
             .inputs(tx_input.clone())
             .outputs(tx_output.clone())
             .outputs_data(tx_output_data.pack())
-            // .witnesses(witness)
+            .witnesses(witness)
             .build();
         tx.as_advanced_builder().build()
     };
     let cycles = ctx.verify_tx(&tx, MAX_CYCLES).unwrap();
     println!("Cycles: {}", cycles);
     // Test bad signature
-    // let witness = {
-    //     let mut witness_data = vec![0u8; 0];
-    //     check_size_and_write(&mut witness_data, &signature.c, 256).unwrap();
-    //     witness_data[0] ^= 1; // Do some modification
-    //     for item in signature.r_and_pubkey.iter() {
-    //         check_size_and_write(&mut witness_data, &item.r, 256).unwrap();
-    //     }
-    //     // println!("witness data={:?}", witness_data);
-    //     vec![
-    //         WitnessArgs::new_builder().build().as_bytes().pack(),
-    //         WitnessArgs::new_builder()
-    //             .output_type(Some(Bytes::from(witness_data)).pack())
-    //             .lock(Option::<Bytes>::None.pack())
-    //             .input_type(Option::<Bytes>::None.pack())
-    //             .build()
-    //             .as_bytes()
-    //             .pack(),
-    //     ]
-    // };
-    // let tx = {
-    //     let tx = TransactionBuilder::default()
-    //         .cell_deps(cell_deps)
-    //         .inputs(tx_input)
-    //         .outputs(tx_output)
-    //         .outputs_data(tx_output_data.pack())
-    //         .witnesses(witness)
-    //         .build();
-    //     tx.as_advanced_builder().build()
-    // };
-    // ctx.verify_tx(&tx, MAX_CYCLES).unwrap_err();
+    let witness = {
+        let mut witness_data = vec![0u8; 0];
+        check_size_and_write(&mut witness_data, &signature.c, 256).unwrap();
+        witness_data[0] ^= 1; // Do some modification
+        for item in signature.r_and_pubkey.iter() {
+            check_size_and_write(&mut witness_data, &item.r, 256).unwrap();
+        }
+        vec![WitnessArgs::new_builder()
+            .output_type(Some(Bytes::from(witness_data)).pack())
+            .lock(Option::<Bytes>::None.pack())
+            .input_type(Option::<Bytes>::None.pack())
+            .build()
+            .as_bytes()
+            .pack()]
+    };
+    let tx = {
+        let tx = TransactionBuilder::default()
+            .cell_deps(cell_deps)
+            .inputs(tx_input)
+            .outputs(tx_output)
+            .outputs_data(tx_output_data.pack())
+            .witnesses(witness)
+            .build();
+        tx.as_advanced_builder().build()
+    };
+    ctx.verify_tx(&tx, MAX_CYCLES).unwrap_err();
 }

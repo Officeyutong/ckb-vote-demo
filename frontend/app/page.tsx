@@ -28,12 +28,12 @@ const Main: React.FC<{}> = () => {
         </Tab.Pane>
       },
       {
-        menuItem: "Generating KeyPair", pane: <Tab.Pane key={1}>
+        menuItem: "Generating Signature KeyPair", pane: <Tab.Pane key={1}>
           <PageGenerateKeyPair></PageGenerateKeyPair>
         </Tab.Pane>
       },
       {
-        menuItem: "Start a vote", pane: <Tab.Pane key={2}>
+        menuItem: "Start a Vote", pane: <Tab.Pane key={2}>
           <PageStartVote></PageStartVote>
         </Tab.Pane>
       },
