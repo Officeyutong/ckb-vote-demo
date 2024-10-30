@@ -1,0 +1,15 @@
+[package]
+name = "ticket-counting"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.91"
+ckb-jsonrpc-types = "0.118.0"
+ckb-sdk = "3.4.0"
+ckb-types = "0.118.0"
+clap = { version = "4.5.20", features = ["derive"] }
+flexi_logger = "0.29.4"
+frozenset = "0.2.2"
+log = "0.4.22"
+rayon = "1.10.0"

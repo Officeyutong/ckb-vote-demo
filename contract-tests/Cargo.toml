@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ckb-testtool = "0.10.2"
+ckb-testtool = "0.14.0"
 rand = "0.8.5"
 rayon = "1.10.0"
 rsa = "0.9.6"
