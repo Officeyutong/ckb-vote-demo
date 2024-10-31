@@ -1,6 +1,6 @@
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use rsa_ring_sign_linkable::{
+use rsa_tools::{
     check_size_and_write, create_signature, BigUint, PrivateKeyParts, PublicKeyParts,
     RsaPrivateKey, RsaPublicKey,
 };

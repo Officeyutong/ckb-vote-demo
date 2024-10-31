@@ -1,10 +1,10 @@
 [package]
-name = "rsa_tools"
+name = "rsa_tools_wasm"
 version = "0.1.2"
 edition = "2021"
 
 [dependencies]
-rsa_ring_sign_linkable = { path = "../rsa_ring_sign_linkable" }
+rsa_tools = { path = "../rsa_tools" }
 console_error_panic_hook = { version = "0.1.7" }
 wasm-bindgen = "0.2.84"
 web-sys = "0.3.72"

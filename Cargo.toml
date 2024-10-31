@@ -6,7 +6,7 @@ members = [ "ckb-vote-test-tool",
   # detect insertion point for newly generated crates.
   # @@INSERTION_POINT@@
   "contracts/ring-signature-verify",
-  "contract-tests", "rsa_ring_sign_linkable", "rsa_tools_wasm", "ticket-counting"
+  "contract-tests", "rsa_tools", "rsa_tools_wasm", "ticket-counting"
 ]
 [profile.release]
 overflow-checks = true

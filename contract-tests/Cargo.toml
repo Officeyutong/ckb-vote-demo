@@ -9,4 +9,4 @@ rand = "0.8.5"
 rayon = "1.10.0"
 rsa = "0.9.6"
 serde_json = "1.0.132"
-rsa_ring_sign_linkable = { path = "../rsa_ring_sign_linkable" }
+rsa_tools = { path = "../rsa_tools" }

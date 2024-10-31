@@ -1082,10 +1082,17 @@ dependencies = [
 name = "ckb-vote-test-tool"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "ckb-sdk",
+ "ckb-types 0.118.0",
+ "clap",
+ "flexi_logger",
  "jose-jwk",
+ "log",
  "rand 0.8.5",
  "rayon",
  "rsa",
+ "rsa_tools",
  "serde_json",
 ]
 
@@ -1183,7 +1190,7 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "rsa",
- "rsa_ring_sign_linkable",
+ "rsa_tools",
  "serde_json",
 ]
 
@@ -1455,9 +1462,9 @@ dependencies = [
 
 [[package]]
 name = "flexi_logger"
-version = "0.29.4"
+version = "0.29.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bc6a1594377eb9de4205e15e33e222c996de8dc047f7c998cc477030bfac48a"
+checksum = "0efeb583f79d5fe02cafae3cbed342daa47c68e9a4e9b2d60fd4fb678cc05710"
 dependencies = [
  "chrono",
  "log",
@@ -2729,7 +2736,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsa_ring_sign_linkable"
+name = "rsa_tools"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -2740,14 +2747,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsa_tools"
+name = "rsa_tools_wasm"
 version = "0.1.2"
 dependencies = [
  "console_error_panic_hook",
  "getrandom 0.2.15",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
- "rsa_ring_sign_linkable",
+ "rsa_tools",
  "wasm-bindgen",
  "wasm-bindgen-test",
  "web-sys",

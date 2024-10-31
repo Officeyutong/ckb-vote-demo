@@ -129,3 +129,57 @@ pub fn create_signature(
             .collect::<Vec<_>>(),
     })
 }
+pub fn encode_public_key_cell(keys: &[RsaPrivateKey]) -> Vec<u8> {
+    let mut buf = Vec::<u8>::new();
+    buf.write_all(&(keys.len() as u16).to_le_bytes()).unwrap();
+    for item in keys {
+        let num_buf = item.n().to_bytes_le();
+        assert_eq!(num_buf.len(), 256);
+        buf.write_all(&num_buf).unwrap();
+    }
+    for item in keys {
+        let mut num_buf = item.e().to_bytes_le();
+        num_buf.resize(4, 0);
+        buf.write_all(&num_buf).unwrap();
+    }
+    buf
+}
+
+pub struct PublicKeyIndexEntry {
+    pub hash: Vec<u8>,
+    pub index: u32,
+}
+pub fn encode_public_key_index_cell(entries: &[PublicKeyIndexEntry]) -> Vec<u8> {
+    let mut buf = Vec::<u8>::new();
+    buf.write_all(&(entries.len() as u16).to_le_bytes()).unwrap();
+    for key_hash in entries.iter() {
+        buf.write_all(&key_hash.hash).unwrap();
+    }
+    for key_hash in entries.iter() {
+        buf.write_all(&key_hash.index.to_le_bytes()).unwrap();
+    }
+    buf
+}
+
+pub fn encode_candidate_cell(entries: &[Candidate]) -> Vec<u8> {
+    let mut buf = Vec::<u8>::new();
+    buf.write_all(&(entries.len() as u16).to_le_bytes())
+        .unwrap();
+    for item in entries.iter() {
+        buf.write_all(&item.id).unwrap();
+        let mut str_bytes = item.description.as_bytes().to_vec();
+        while str_bytes.len() > 99 {
+            str_bytes.pop();
+        }
+        while str_bytes.len() < 100 {
+            str_bytes.push(0);
+        }
+        buf.write_all(&str_bytes).unwrap()
+    }
+    buf
+}
+#[derive(Debug)]
+pub struct Candidate {
+    pub id: [u8; 4],
+    pub description: String,
+}

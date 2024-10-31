@@ -5,24 +5,23 @@ use ckb_testtool::builtin::ALWAYS_SUCCESS;
 use ckb_testtool::bytes::Bytes;
 use ckb_testtool::ckb_types::core::TransactionBuilder;
 use ckb_testtool::ckb_types::packed::{CellDep, CellInput, CellOutput, ScriptOpt, WitnessArgs};
-use ckb_testtool::ckb_types::prelude::Builder;
+use ckb_testtool::ckb_types::prelude::{Builder, Unpack};
 use ckb_testtool::ckb_types::prelude::{Entity, Pack};
-use ckb_testtool::{bytes::BufMut, ckb_types::packed::OutPoint, context::Context};
+use ckb_testtool::{ckb_types::packed::OutPoint, context::Context};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use rsa::{traits::PublicKeyParts, RsaPrivateKey};
-use rsa_ring_sign_linkable::{check_size_and_write, create_signature};
+use rsa::RsaPrivateKey;
+use rsa_tools::{
+    check_size_and_write, create_signature, encode_candidate_cell, encode_public_key_cell,
+    encode_public_key_index_cell, Candidate, PublicKeyIndexEntry,
+};
 
 const KEY_COUNT: usize = 1000;
 const CHUNK_SIZE: usize = 450;
 const CANDIDATE_COUNT: usize = 100;
 const MAX_CYCLES: u64 = 35_0000_0000;
-#[derive(Debug)]
-struct Candidate {
-    id: [u8; 4],
-    description: String,
-}
+
 #[derive(Debug)]
 struct PreparedState {
     #[allow(unused)]
@@ -46,31 +45,18 @@ fn prepare(ctx: &mut Context) -> PreparedState {
     let key_cells = keys
         .chunks(CHUNK_SIZE)
         .enumerate()
-        .map(|(_, chunk)| {
-            let mut buf = Vec::<u8>::new();
-            buf.put_u16_le(chunk.len() as _);
-            for item in chunk {
-                let num_buf = item.n().to_bytes_le();
-                assert_eq!(num_buf.len(), 256);
-                buf.write_all(&num_buf).unwrap();
-            }
-            for item in chunk {
-                let mut num_buf = item.e().to_bytes_le();
-                num_buf.resize(4, 0);
-                buf.write_all(&num_buf).unwrap();
-            }
-            ctx.deploy_cell(buf.into())
-        })
+        .map(|(_, chunk)| ctx.deploy_cell(encode_public_key_cell(chunk).into()))
         .collect::<Vec<_>>();
     let key_index_cell = {
-        let mut buf = Vec::<u8>::new();
-        buf.put_u16_le(key_cells.len() as _);
-        for key_hash in key_cells.iter() {
-            buf.write_all(&key_hash.tx_hash().raw_data()).unwrap();
-        }
-        for key_hash in key_cells.iter() {
-            buf.write_all(&key_hash.index().raw_data()).unwrap();
-        }
+        let buf = encode_public_key_index_cell(
+            &key_cells
+                .iter()
+                .map(|v| PublicKeyIndexEntry {
+                    hash: v.tx_hash().raw_data().to_vec(),
+                    index: v.index().unpack(),
+                })
+                .collect::<Vec<_>>(),
+        );
         ctx.deploy_cell(buf.into())
     };
     let mut rng = rand::thread_rng();
@@ -80,22 +66,7 @@ fn prepare(ctx: &mut Context) -> PreparedState {
             id: rng.gen(),
         })
         .collect::<Vec<_>>();
-    let candidate_cell = {
-        let mut buf = Vec::<u8>::new();
-        buf.put_u16_le(candidates.len() as _);
-        for item in candidates.iter() {
-            buf.write_all(&item.id).unwrap();
-            let mut str_bytes = item.description.as_bytes().to_vec();
-            while str_bytes.len() > 99 {
-                str_bytes.pop();
-            }
-            while str_bytes.len() < 100 {
-                str_bytes.push(0);
-            }
-            buf.write_all(&str_bytes).unwrap()
-        }
-        ctx.deploy_cell(buf.into())
-    };
+    let candidate_cell = { ctx.deploy_cell(encode_candidate_cell(&candidates).into()) };
     PreparedState {
         candidate_cell,
         candidates,
