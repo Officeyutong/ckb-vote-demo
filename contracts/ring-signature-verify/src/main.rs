@@ -151,27 +151,47 @@ fn verify_all() -> Result<(), VoteError> {
     let ring_size = u16::from_le_bytes([public_key_cell_data[0], public_key_cell_data[1]]) as usize;
     ckb_std::debug!("ring_size={}", ring_size);
     let vote_cell_data = load_cell_data(VOTE_CELL_INDEX, Source::Output)?;
-    verify_candidate(&vote_cell_data[0..4])?;
-    ckb_std::debug!("candidate verified");
-    let witness_data = load_witness(WITNESS_INDEX, Source::Output)?;
-    let witness_reader = WitnessArgsReader::from_slice(&witness_data).map_err(|e| {
-        ckb_std::debug!("Failed to read witness: {}", e);
-        VoteError::BadWitness
-    })?;
-    let output_type_witness = witness_reader
-        .output_type()
-        .to_opt()
-        .ok_or(VoteError::MissingDependency)?
-        .raw_data();
 
+    let use_witness = vote_cell_data[0] == 1;
+
+    verify_candidate(&vote_cell_data[1..1 + 4])?;
+    ckb_std::debug!("candidate verified");
+    let witness_data = if use_witness {
+        Some(load_witness(WITNESS_INDEX, Source::Output)?)
+    } else {
+        None
+    };
+    let (c, r_arr, image) = if use_witness {
+        let witness_reader = WitnessArgsReader::from_slice(witness_data.as_ref().unwrap())
+            .map_err(|e| {
+                ckb_std::debug!("Failed to read witness: {}", e);
+                VoteError::BadWitness
+            })?;
+        let output_type_witness = witness_reader
+            .output_type()
+            .to_opt()
+            .ok_or(VoteError::MissingDependency)?
+            .raw_data();
+        (
+            &output_type_witness[0..256],
+            &output_type_witness[256..256 + 256 * ring_size],
+            &vote_cell_data[1 + 4..1 + 4 + 256],
+        )
+    } else {
+        (
+            &vote_cell_data[5..5 + 256],
+            &vote_cell_data[5 + 256..5 + 256 + 256 * ring_size],
+            &vote_cell_data[5 + 256 + 256 * ring_size..5 + 256 + 256 * ring_size + 256],
+        )
+    };
     verify_signature(
         ring_size,
-        &vote_cell_data[0..4],
+        &vote_cell_data[1..1 + 4],
         &public_key_cell_data[2..2 + 256 * ring_size],
         &public_key_cell_data[2 + 256 * ring_size..],
-        &output_type_witness[0..256],
-        &output_type_witness[256..256 + 256 * ring_size],
-        &vote_cell_data[4..4 + 256],
+        c,
+        r_arr,
+        image,
     )?;
     ckb_std::debug!("signature verified");
     Ok(())

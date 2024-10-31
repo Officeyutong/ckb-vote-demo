@@ -196,6 +196,7 @@ const PageUserVote: React.FC<{}> = () => {
                 ],
                 outputsData: [
                     new Uint8Array([
+                        1, // R[] and I are in witness
                         ...selectedCandidate.id,
                         ...signature.i])
                 ],

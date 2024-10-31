@@ -134,6 +134,7 @@ fn test_verify_signature() {
 
     let (tx_output, tx_output_data) = {
         let mut cell_data = vec![0u8; 0];
+        cell_data.push(1); // R[] and I are in witness
         cell_data.write_all(&selected_candidate.id).unwrap();
         check_size_and_write(&mut cell_data, &signature.i, 256).unwrap();
         let type_script = ctx.build_script(&script_out_point, Bytes::new()).unwrap();
