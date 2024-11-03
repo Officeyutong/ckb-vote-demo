@@ -101,7 +101,6 @@ export function decodePubKeyArray(buf: Buffer): RSAPubKey[] {
     for (let i = 0; i < n; i++) {
         const n = bigintConversion.bufToBigint(reverseBuffer(buf.subarray(idx, idx + 256))/* We are in little endian*/);
         idx += 256;
-        // console.log("decode", buf.subarray(idx, idx + 256), "to", n);
         result.push({ n });
 
     }
@@ -154,26 +153,13 @@ export async function publishBytesAsCell(bytes: ArrayBuffer, lockScript: ScriptL
     const tx = ccc.Transaction.from({
         outputs: [{ lock: lockScript }],
         outputsData: [bytes],
-        // cellDeps: [
-        //     CellDep.from({ outPoint: { txHash: "0x75be96e1871693f030db27ddae47890a28ab180e88e36ebb3575d9f1377d3da7", index: BigInt(0) }, depType: "depGroup" })
-        // ]
     });
 
-
-    // const balanceDiff =
-    //     (await tx.getInputsCapacity(cccClient)) - tx.getOutputsCapacity();
-    // if (balanceDiff < 0) {
-    //     throw new Error(`Insufficient balance: missing ${Math.abs(parseFloat(balanceDiff.toString()) / 100000000)} CKB for publishing ${dataName} data`)
-    // }
     return {
         sendTx: async () => {
             await tx.completeFeeBy(signer, 1000);
             await tx.completeInputsAll(signer);
             console.log(tx);
-            // const newTx = await signer.signTransaction(tx);
-            // console.log("Signed new tx",newTx);
-            // debugger;
-            // console.log(tx.stringify());
             console.log(tx.hash());
             return await signer.sendTransaction(tx);
         },

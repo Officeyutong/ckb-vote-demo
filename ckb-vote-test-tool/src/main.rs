@@ -1,11 +1,9 @@
 use std::{
-    collections::{HashMap, HashSet},
-    io::Write,
-    str::FromStr,
-    sync::atomic::AtomicUsize,
+    collections::HashMap, io::Write, str::FromStr, sync::atomic::AtomicUsize, time::Duration,
 };
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, Context};
+use ckb_jsonrpc_types::Status;
 use ckb_sdk::{
     constants::{ONE_CKB, SIGHASH_TYPE_HASH},
     core::TransactionBuilder,
@@ -13,13 +11,13 @@ use ckb_sdk::{
         CellCollector, DefaultCellCollector, DefaultCellDepResolver, DefaultHeaderDepResolver,
         DefaultTransactionDependencyProvider, SecpCkbRawKeySigner,
     },
-    tx_builder::{CapacityBalancer, TxBuilder, TxBuilderError},
+    tx_builder::{CapacityBalancer, TxBuilder},
     unlock::{ScriptUnlocker, SecpSighashUnlocker},
     Address, CkbRpcClient, ScriptId,
 };
 use ckb_types::{
     bytes::Bytes,
-    core::BlockView,
+    core::{BlockView, DepType, ScriptHashType},
     packed::{Byte32, CellDep, CellOutput, OutPoint, Script, WitnessArgs},
     prelude::{Entity, Pack},
     H256,
@@ -39,22 +37,27 @@ use rsa_tools::{
 
 #[derive(Parser)]
 struct Args {
-    #[arg(short = 'c', default_value_t = 0)]
+    #[arg(short = 'c', default_value_t = 100)]
     /// How many users for testing
     test_user_count: usize,
-    #[arg(short = 'c', default_value_t = 5)]
+    #[arg(short = 'c', default_value_t = 20)]
     /// How many users in a ring?
     chunk_size: usize,
-
     #[arg(short = 'p')]
     /// secp256k1 private key of administrator
     administrator_private_key: String,
     #[arg(short = 'a')]
     /// Account address of administrator
     administrator_address: String,
-    #[arg(default_value_t=String::from("http://127.0.0.1:8114"))]
+    #[arg(default_value_t=String::from("http://127.0.0.1:9000"))]
     /// URL of rpc server
     rpc_url: String,
+    #[arg(long,default_value_t=String::from("0x2d9a206deac24746ec531f1505c0daaf846cf92a976380df0b350f59fa3a6561"))]
+    /// Code hash of the type script
+    typescript_code_hash: String,
+    #[arg(long,default_value_t=String::from("0x46e5f3aab4e2ec522fef6d943cd75b242e224e33759c9400a91186fcc76b9757"))]
+    /// Outpoint of the typescript, index defaults to 0
+    typescript_out_point_tx: String,
 }
 
 struct SimpleTransferBuilderWithWitness {
@@ -66,11 +69,11 @@ impl TxBuilder for SimpleTransferBuilderWithWitness {
     fn build_base(
         &self,
         _cell_collector: &mut dyn CellCollector,
-        cell_dep_resolver: &dyn ckb_sdk::traits::CellDepResolver,
+        _cell_dep_resolver: &dyn ckb_sdk::traits::CellDepResolver,
         _header_dep_resolver: &dyn ckb_sdk::traits::HeaderDepResolver,
         _tx_dep_provider: &dyn ckb_sdk::traits::TransactionDependencyProvider,
     ) -> Result<TransactionView, ckb_sdk::tx_builder::TxBuilderError> {
-        let mut cell_deps = HashSet::new();
+        let mut cell_deps = Vec::new();
         cell_deps.extend(self.extra_cell_dep.iter().map(|x| x.clone()));
         let mut outputs = Vec::new();
         let mut outputs_data = Vec::new();
@@ -79,15 +82,6 @@ impl TxBuilder for SimpleTransferBuilderWithWitness {
             outputs.push(output.clone());
             outputs_data.push(output_data.pack());
             witnesses.push(witness.pack());
-            if let Some(type_script) = output.type_().to_opt() {
-                let script_id = ScriptId::from(&type_script);
-                if !script_id.is_type_id() {
-                    let cell_dep = cell_dep_resolver
-                        .resolve(&type_script)
-                        .ok_or(TxBuilderError::ResolveCellDepFailed(type_script))?;
-                    cell_deps.insert(cell_dep);
-                }
-            }
         }
         Ok(TransactionBuilder::default()
             .set_cell_deps(cell_deps.into_iter().collect())
@@ -128,10 +122,17 @@ impl CellPublisher {
         data: &[u8],
         receiver: &Address,
         witness: Option<&[u8]>,
+        output_type_script: Option<(H256, ScriptHashType)>,
         extra_cell_dep: Vec<CellDep>,
     ) -> anyhow::Result<(H256, u32)> {
         let tx = self
-            .build_transaction(receiver.clone(), data, witness, extra_cell_dep)
+            .build_transaction(
+                receiver.clone(),
+                data,
+                witness,
+                output_type_script,
+                extra_cell_dep,
+            )
             .with_context(|| anyhow!("Failed to call build_transaction"))?;
         let tip_num = self
             .client
@@ -147,6 +148,7 @@ impl CellPublisher {
 
         let json_tx = ckb_jsonrpc_types::TransactionView::from(tx);
         log::trace!("tx: {}", serde_json::to_string_pretty(&json_tx).unwrap());
+        log::debug!("Transaction build");
         let tx_hash = self
             .client
             .send_transaction(
@@ -154,6 +156,30 @@ impl CellPublisher {
                 Some(ckb_jsonrpc_types::OutputsValidator::Passthrough),
             )
             .with_context(|| anyhow!("Failed to send transaction"))?;
+        let mut retry_count = 20;
+        loop {
+            if retry_count == 0 {
+                log::debug!("Failed to wait the transaction to be received");
+                break;
+            }
+            let status = self
+                .client
+                .get_transaction_status(tx_hash.clone())
+                .with_context(|| anyhow!("Failed to query transaction status"))?;
+            log::debug!("status: {:?}", status.tx_status.status);
+            match status.tx_status.status {
+                Status::Unknown => {
+                    retry_count -= 1;
+                }
+                Status::Committed | Status::Pending | Status::Proposed => {
+                    break;
+                }
+                Status::Rejected => {
+                    bail!("Transacton rejected: {:?}", status.tx_status);
+                }
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
         Ok((tx_hash, 0))
     }
 
@@ -162,6 +188,7 @@ impl CellPublisher {
         receiver: Address,
         data: &[u8],
         witness: Option<&[u8]>,
+        output_type_script: Option<(H256, ScriptHashType)>,
         extra_cell_dep: Vec<CellDep>,
     ) -> anyhow::Result<TransactionView> {
         let sighash_unlocker = SecpSighashUnlocker::from(Box::new(self.signer.clone()) as Box<_>);
@@ -183,11 +210,22 @@ impl CellPublisher {
             DefaultCellDepResolver::from_genesis(&BlockView::from(genesis_block))?
         };
         let header_dep_resolver = DefaultHeaderDepResolver::new(&self.rpc_url);
-        let capacity = (61 + 1 + data.len()) as u64 * ONE_CKB;
+        let capacity = (61 + 100 + 1 + data.len()) as u64 * ONE_CKB;
 
         let output = CellOutput::new_builder()
             .lock(Script::from(&receiver))
             .capacity(capacity.pack())
+            .type_(
+                output_type_script
+                    .map(|(hash, hash_type)| {
+                        Script::new_builder()
+                            .code_hash(Byte32::from_slice(hash.as_bytes()).unwrap())
+                            .hash_type(hash_type.into())
+                            .build()
+                            .into()
+                    })
+                    .pack(),
+            )
             .build();
         let builder = SimpleTransferBuilderWithWitness {
             outputs: vec![(
@@ -229,7 +267,10 @@ fn main() -> anyhow::Result<()> {
     let admin_addr = Address::from_str(&args.administrator_address)
         .map_err(|e| anyhow!("Failed to parse administrator address: {}", e))?;
     log::debug!("admin_address={:#?}", admin_addr);
-
+    let ts_code_hash = H256::from_str(&args.typescript_code_hash[2..])
+        .with_context(|| anyhow!("Failed to parse typescript code hash"))?;
+    let ts_outpoint = H256::from_str(&args.typescript_out_point_tx[2..])
+        .with_context(|| anyhow!("Failed to parse typescript outpoint"))?;
     let keys = {
         let done_count = AtomicUsize::new(0);
 
@@ -255,7 +296,7 @@ fn main() -> anyhow::Result<()> {
 
                 let data = encode_public_key_cell(chunk);
                 let (txhash, index) = publisher
-                    .publish_bytes_cell(&data, &admin_addr, None, vec![])
+                    .publish_bytes_cell(&data, &admin_addr, None, None, vec![])
                     .with_context(|| anyhow!("Failed to publish chunk {}", idx + 1))?;
 
                 log::info!("Published chunk {}", idx + 1);
@@ -267,7 +308,7 @@ fn main() -> anyhow::Result<()> {
             },
         ))
         .collect::<Vec<_>>()?;
-    let _index_cell = {
+    let index_cell = {
         let mut result = Vec::<PublicKeyIndexEntry>::default();
         for (tx, index, _) in public_key_hashes.iter() {
             result.push(PublicKeyIndexEntry {
@@ -277,7 +318,7 @@ fn main() -> anyhow::Result<()> {
         }
         let encoded = encode_public_key_index_cell(&result);
         publisher
-            .publish_bytes_cell(&encoded, &admin_addr, None, vec![])
+            .publish_bytes_cell(&encoded, &admin_addr, None, None, vec![])
             .with_context(|| anyhow!("Failed to publish public key index cell"))?
     };
 
@@ -293,7 +334,7 @@ fn main() -> anyhow::Result<()> {
         (
             candidates,
             publisher
-                .publish_bytes_cell(&encoded, &admin_addr, None, vec![])
+                .publish_bytes_cell(&encoded, &admin_addr, None, None, vec![])
                 .with_context(|| anyhow!("Failed to publish candidate cell"))?,
         )
     };
@@ -319,7 +360,6 @@ fn main() -> anyhow::Result<()> {
             let mut buf = vec![];
             buf.push(0); // Don't use witness
             buf.write_all(&candidate_target.id).unwrap();
-            // buf.write_all(signature.c)
             check_size_and_write(&mut buf, &signature.c, 256).unwrap();
             for item in signature.r_and_pubkey.iter() {
                 check_size_and_write(&mut buf, &item.r, 256).unwrap();
@@ -337,6 +377,7 @@ fn main() -> anyhow::Result<()> {
         })
         .collect::<Vec<_>>();
     let mut vote_result = HashMap::<[u8; 4], usize>::default();
+
     for (idx, item) in voted_target.into_iter().enumerate() {
         log::info!("Sending signature {}", idx + 1);
         *vote_result.entry(item.candidate_id).or_insert(0) += 1;
@@ -345,6 +386,7 @@ fn main() -> anyhow::Result<()> {
                 &item.vote_cell_data,
                 &admin_addr,
                 None,
+                Some((ts_code_hash.clone(), ScriptHashType::Data1)),
                 vec![
                     CellDep::new_builder()
                         .out_point(OutPoint::new(
@@ -358,11 +400,29 @@ fn main() -> anyhow::Result<()> {
                             item.public_key_cell.1,
                         ))
                         .build(),
+                    CellDep::new_builder()
+                        .out_point(OutPoint::new(
+                            Byte32::from_slice(ts_outpoint.as_bytes()).unwrap(),
+                            0,
+                        ))
+                        .dep_type(DepType::Code.into())
+                        .build(),
                 ],
             )
             .with_context(|| anyhow!("Failed to send signature for {}", idx + 1))?;
         log::info!("Sended signature {}", idx + 1);
     }
-    log::info!("{:?}", vote_result);
+    let vote_result_string_as_key = vote_result
+        .into_iter()
+        .map(|(key, val)| (format!("{:08X}", u32::from_le_bytes(key)), val))
+        .collect::<HashMap<_, _>>();
+    println!("Public key index cell: {}:{}", index_cell.0, index_cell.1);
+    println!("Candidate cell: {}:{}", candidate_cell.0, candidate_cell.1);
+    println!(
+        "{}",
+        serde_json::to_string(&vote_result_string_as_key)
+            .with_context(|| anyhow!("Failed to serialize vote result to string"))?
+    );
+
     Ok(())
 }

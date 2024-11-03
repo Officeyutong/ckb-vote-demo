@@ -105,7 +105,7 @@ impl VoteValidator {
             .get(0)
             .ok_or_else(|| anyhow!("Missing output data 0"))?
             .as_bytes();
-        let candidate_id = &vote_cell_data[0..4];
+        let candidate_id = &vote_cell_data[1..5];
         if !self.candidate.contains_key(&[
             candidate_id[0],
             candidate_id[1],
@@ -114,9 +114,7 @@ impl VoteValidator {
         ]) {
             bail!("Invalid candidate id: {:?}", candidate_id);
         }
-        if vote_cell_data.len() < 260 {
-            bail!("Missing image");
-        }
+
         Ok(())
     }
 }
@@ -226,7 +224,7 @@ fn main() -> anyhow::Result<()> {
                         .validate_tx(&tx)
                         .with_context(|| anyhow!("Failed to verify tx"))
                     {
-                        log::warn!("Bad tx encountered: {}", e);
+                        log::warn!("Bad tx encountered: {:?}", e);
                         return Ok(None);
                     }
                     let vote_cell = tx
@@ -234,10 +232,17 @@ fn main() -> anyhow::Result<()> {
                         .get(0)
                         .ok_or_else(|| anyhow!("Missing output data 0"))?
                         .as_bytes();
-                    Ok(Some(VoteTarget {
-                        candidate_id: [vote_cell[0], vote_cell[1], vote_cell[2], vote_cell[3]],
-                        image: vote_cell[4..260].to_vec(),
-                    }))
+                    if vote_cell[0] == 0 {
+                        Ok(Some(VoteTarget {
+                            candidate_id: [vote_cell[1], vote_cell[2], vote_cell[3], vote_cell[4]],
+                            image: vote_cell[vote_cell.len() - 256..].to_vec(),
+                        }))
+                    } else {
+                        Ok(Some(VoteTarget {
+                            candidate_id: [vote_cell[1], vote_cell[2], vote_cell[3], vote_cell[4]],
+                            image: vote_cell[5..5 + 256].to_vec(),
+                        }))
+                    }
                 })
                 .collect::<Vec<_>>();
             if initial_verified.is_empty() {
@@ -260,11 +265,21 @@ fn main() -> anyhow::Result<()> {
     };
     log::debug!("vote result = {:?}", result);
     println!("Counting result:");
-    for (key, value) in result.into_iter() {
+    for (key, value) in result.iter() {
         let desc = candidates
-            .get(&key)
+            .get(key)
             .ok_or_else(|| anyhow!("Unexpected candidate id: {:?}", key))?;
         println!("{:08}: {} <{:?}>", value, desc, key);
     }
+
+    let vote_result_string_as_key = result
+        .into_iter()
+        .map(|(key, val)| (format!("{:08X}", u32::from_le_bytes(key)), val))
+        .collect::<HashMap<_, _>>();
+    println!(
+        "{}",
+        serde_json::to_string(&vote_result_string_as_key)
+            .with_context(|| anyhow!("Failed to serialize vote result to string"))?
+    );
     Ok(())
 }
