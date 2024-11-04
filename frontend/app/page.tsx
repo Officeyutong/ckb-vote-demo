@@ -28,7 +28,7 @@ const Main: React.FC<{}> = () => {
         </Tab.Pane>
       },
       {
-        menuItem: "Generating Signature KeyPair", pane: <Tab.Pane key={1}>
+        menuItem: "Generating Vote KeyPair", pane: <Tab.Pane key={1}>
           <PageGenerateKeyPair></PageGenerateKeyPair>
         </Tab.Pane>
       },
