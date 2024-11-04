@@ -9,7 +9,7 @@ A simple demo DApp to implement decentralized voting on CKB.
 - `/vote-counting`: Tools for counting votes
 - `/rsa_tools`: Rust library for creating ring signature
 - `/rsa_tools_wasm`: Wasm wrapper for `/rsa_tools`, so able to be used in browser
-- `/ckb-vote-test-tool`: Pressure testing tool, generates a lot of key pairs, sign their vote result, and publish them onto block chain
+- `/ckb-vote-test-tool`: General testing tool, generates a lot of key pairs, sign their vote result, and publish them onto block chain
 
 ## How to use?
 
