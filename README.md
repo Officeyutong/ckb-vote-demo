@@ -7,8 +7,8 @@ A simple demo DApp to implement decentralized voting on CKB.
 - `/contracts/ring-signature-verify`: The smart contract, used for veryfing ring signature that was published on chain, so we only accept votes with valid signature
 - `/contract-tests`: Tests for the smart contract, based on commpiled binary
 - `/vote-counting`: Tools for counting votes
-- `/rsa_tools`: Rust library for creating ring signature
-- `/rsa_tools_wasm`: Wasm wrapper for `/rsa_tools`, so able to be used in browser
+- `/signature-tools`: Rust library for creating ring signature
+- `/signature-tools-wasm`: Wasm wrapper for `/signature-tools`, so able to be used in browser
 - `/ckb-vote-test-tool`: General testing tool, generates a lot of key pairs, sign their vote result, and publish them onto block chain
 
 ## How to use?

@@ -12,7 +12,7 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rsa::RsaPrivateKey;
-use rsa_tools::{
+use signature_tools::{
     check_size_and_write, create_signature, encode_candidate_cell, encode_public_key_cell,
     encode_public_key_index_cell, Candidate, PublicKeyIndexEntry,
 };

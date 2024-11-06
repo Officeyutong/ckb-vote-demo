@@ -5,7 +5,7 @@ import { cccClient } from "../ccc-client";
 import { ccc } from "@ckb-ccc/core";
 import { bigintToBuf, bufToHex, hexToBuf } from "bigint-conversion";
 import _ from "lodash";
-import __wbg_init, { create_ring_signature_wasm, derive_rsa_key_pair_form_rand_seed } from "rsa_tools_wasm";
+import __wbg_init, { create_ring_signature_wasm } from "signature-tools-wasm";
 import offCKBConfig from "@/offckb.config";
 import { useSigner } from "@ckb-ccc/connector-react";
 enum Stage {
@@ -62,7 +62,6 @@ const PageUserVote: React.FC<{}> = () => {
     const [totalCount, setTotalCount] = useState(1);
     const [progressText, setProgressText] = useState<string | null>(null);
 
-    // A private key from devnet account
     const candidateHash = useInputValue("");
     const publicKeyIndexCell = useInputValue("");
     const [signPrivateKey, setSignPrivateKey] = useState("")
