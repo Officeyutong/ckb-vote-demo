@@ -1,9 +1,6 @@
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use signature_tools::{
-    check_size_and_write, create_signature, BigUint, PrivateKeyParts, PublicKeyParts,
-    RsaPrivateKey, RsaPublicKey,
-};
+use signature_tools::{check_size_and_write, rsa_tools::{create_signature_rsa, PrivateKeyParts, PublicKeyParts, RsaPrivateKey, RsaPublicKey}, BigUint};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(getter_with_clone)]
@@ -57,7 +54,7 @@ pub fn create_ring_signature_wasm(
         ],
     )
     .map_err(|e| format!("Bad private key: {}", e))?;
-    let signature = create_signature(&pub_keys, &private_key, signer, message)
+    let signature = create_signature_rsa(&pub_keys, &private_key, signer, message)
         .map_err(|e| format!("Unable to sign: {}", e))?;
 
     let result = {

@@ -31,8 +31,12 @@ use rayon::iter::{
 };
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use signature_tools::{
-    check_size_and_write, create_signature, encode_candidate_cell, encode_public_key_cell,
-    encode_public_key_index_cell, Candidate, PublicKeyIndexEntry,
+    candidate::{encode_candidate_cell, Candidate},
+    check_size_and_write,
+    rsa_tools::{
+        create_signature_rsa, encode_public_key_cell, encode_public_key_index_cell,
+        PublicKeyIndexEntry,
+    },
 };
 
 #[derive(Parser)]
@@ -356,7 +360,8 @@ fn main() -> anyhow::Result<()> {
             let block_index = idx % args.chunk_size;
             let ring = &public_key_hashes[belonging_block];
             let signature =
-                create_signature(&ring.2, private_key, block_index, &candidate_target.id).unwrap();
+                create_signature_rsa(&ring.2, private_key, block_index, &candidate_target.id)
+                    .unwrap();
             let mut buf = vec![];
             buf.push(0); // Don't use witness
             buf.write_all(&candidate_target.id).unwrap();
