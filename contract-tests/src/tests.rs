@@ -14,7 +14,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rsa::RsaPrivateKey;
 use signature_tools::candidate::{encode_candidate_cell, Candidate};
 use signature_tools::check_size_and_write;
-use signature_tools::rsa_tools::{create_signature_rsa, encode_public_key_cell, encode_public_key_index_cell, PublicKeyIndexEntry};
+use signature_tools::rsa_tools::{create_signature, encode_public_key_cell, encode_public_key_index_cell, PublicKeyIndexEntry};
 
 const KEY_COUNT: usize = 1000;
 const CHUNK_SIZE: usize = 450;
@@ -87,7 +87,7 @@ fn test_verify_signature() {
     let signer_block = signer / CHUNK_SIZE;
     let signer_index = signer % CHUNK_SIZE;
     let selected_candidate = state.candidates.choose(&mut rng).unwrap();
-    let signature = create_signature_rsa(
+    let signature = create_signature(
         &state.keys
             [CHUNK_SIZE * signer_block..(CHUNK_SIZE * (signer_block + 1)).min(state.keys.len())]
             .iter()

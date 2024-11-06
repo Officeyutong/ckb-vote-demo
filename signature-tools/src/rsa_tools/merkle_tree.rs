@@ -39,20 +39,21 @@ pub fn create_merkle_tree_rsa<T: PublicKeyParts, P: FnMut(usize, &[u8]) -> ()>(
 pub fn create_merkle_tree_with_root_hash_rsa<T: PublicKeyParts>(
     pub_keys: &[T],
     group_size: usize,
-) -> Result<Vec<u8>, String> {
+) -> anyhow::Result<Vec<u8>> {
     let tree = create_merkle_tree_rsa(
         pub_keys,
         group_size,
         Option::<Box<dyn Fn(usize, &[u8]) -> ()>>::None,
     )
-    .map_err(|e| format!("Failed to create merkle tree: {:?}", e))?;
+    .with_context(|| anyhow!("Failed to create merkle tree"))?;
 
     Ok(tree
         .root()
-        .ok_or_else(|| String::from("Unable to get merkle tree root"))?
+        .ok_or_else(|| anyhow!("Unable to get merkle tree root"))?
         .to_vec())
 }
 
+#[derive(Clone, Debug)]
 pub struct MerkleProofResult {
     pub proof: Vec<u8>,
     pub leaf_hash: Vec<u8>,
@@ -62,7 +63,7 @@ pub fn create_merkle_tree_with_proof_rsa<T: PublicKeyParts>(
     pub_keys: &[T],
     group_size: usize,
     proof_index: usize,
-) -> Result<MerkleProofResult, String> {
+) -> anyhow::Result<MerkleProofResult> {
     let mut leaf_hash = None;
 
     let tree = create_merkle_tree_rsa(
@@ -74,12 +75,12 @@ pub fn create_merkle_tree_with_proof_rsa<T: PublicKeyParts>(
             }
         }),
     )
-    .map_err(|e| format!("Failed to create merkle tree: {:?}", e))?;
+    .with_context(|| anyhow!("Failed to create merkle tree"))?;
 
     // let leaf_hash = tree.
     Ok(MerkleProofResult {
         proof: tree.proof(&[proof_index]).serialize::<DirectHashesOrder>(),
-        leaf_hash: leaf_hash.ok_or_else(|| String::from("Bad proof index"))?,
+        leaf_hash: leaf_hash.ok_or_else(|| anyhow!("Bad proof index"))?,
     })
 }
 

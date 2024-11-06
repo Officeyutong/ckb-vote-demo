@@ -48,7 +48,7 @@ impl RSASignature {
 }
 
 
-pub fn create_signature_rsa(
+pub fn create_signature(
     all_keys: &[RsaPublicKey],
     signer_private_key: &RsaPrivateKey,
     signer: usize,

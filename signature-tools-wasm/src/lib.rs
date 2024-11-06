@@ -1,6 +1,14 @@
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use signature_tools::{check_size_and_write, rsa_tools::{create_signature_rsa, PrivateKeyParts, PublicKeyParts, RsaPrivateKey, RsaPublicKey}, BigUint};
+use signature_tools::{
+    check_size_and_write,
+    rsa_tools::{
+        create_signature,
+        merkle_tree::{create_merkle_tree_with_proof_rsa, create_merkle_tree_with_root_hash_rsa},
+        PrivateKeyParts, PublicKeyParts, RsaPrivateKey, RsaPublicKey,
+    },
+    BigUint,
+};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(getter_with_clone)]
@@ -23,8 +31,26 @@ extern "C" {
     fn log(s: &str);
 
 }
+
+fn parse_pubkey_entries_from_raw_buf(
+    n: usize,
+    e_arr: &[u8],
+    n_arr: &[u8],
+) -> Result<Vec<RsaPublicKey>, String> {
+    let mut pub_keys = Vec::<RsaPublicKey>::new();
+    for i in 0..n {
+        let e = BigUint::from_bytes_le(&e_arr[i * 4..(i + 1) * 4]);
+        let n = BigUint::from_bytes_le(&n_arr[i * 256..(i + 1) * 256]);
+        pub_keys.push(
+            RsaPublicKey::new(n.clone(), e.clone())
+                .map_err(|err| format!("Bad public key (n={}, e={}): {}", n, e, err))?,
+        );
+    }
+    Ok(pub_keys)
+}
+
 #[wasm_bindgen]
-pub fn create_ring_signature_wasm(
+pub fn create_ring_signature_rsa_wasm(
     n: usize,
     pub_keys_e_arr: &[u8],
     pub_keys_n_arr: &[u8],
@@ -34,15 +60,8 @@ pub fn create_ring_signature_wasm(
     signer: usize,
     message: &[u8],
 ) -> Result<RawSignature, String> {
-    let mut pub_keys = Vec::<RsaPublicKey>::new();
-    for i in 0..n {
-        let e = BigUint::from_bytes_le(&pub_keys_e_arr[i * 4..(i + 1) * 4]);
-        let n = BigUint::from_bytes_le(&pub_keys_n_arr[i * 256..(i + 1) * 256]);
-        pub_keys.push(
-            RsaPublicKey::new(n.clone(), e.clone())
-                .map_err(|err| format!("Bad public key (n={}, e={}): {}", n, e, err))?,
-        );
-    }
+    let pub_keys = parse_pubkey_entries_from_raw_buf(n, pub_keys_e_arr, pub_keys_n_arr)?;
+
     let signer_pub_key = &pub_keys[signer];
     let private_key = RsaPrivateKey::from_components(
         signer_pub_key.n().clone(),
@@ -54,7 +73,7 @@ pub fn create_ring_signature_wasm(
         ],
     )
     .map_err(|e| format!("Bad private key: {}", e))?;
-    let signature = create_signature_rsa(&pub_keys, &private_key, signer, message)
+    let signature = create_signature(&pub_keys, &private_key, signer, message)
         .map_err(|e| format!("Unable to sign: {}", e))?;
 
     let result = {
@@ -117,5 +136,40 @@ pub fn derive_rsa_key_pair_form_rand_seed(seed: &[u8]) -> Result<RsaKeyPair, Str
             .ok_or_else(|| format!("Missing second prime number"))?
             .to_bytes_le(),
         d: privkey.d().to_bytes_le(),
+    })
+}
+
+pub fn create_merkle_tree_root_rsa(
+    n: usize,
+    group_size: usize,
+    n_arr: &[u8],
+    e_arr: &[u8],
+) -> Result<Vec<u8>, String> {
+    let pub_keys = parse_pubkey_entries_from_raw_buf(n, e_arr, n_arr)?;
+
+    let root = create_merkle_tree_with_root_hash_rsa(&pub_keys, group_size)
+        .map_err(|e| format!("{:?}", e))?;
+    Ok(root)
+}
+
+#[wasm_bindgen(getter_with_clone)]
+pub struct MerkleProofResultWasm {
+    pub proof: Vec<u8>,
+    pub leaf_hash: Vec<u8>,
+}
+pub fn create_merkle_tree_proof_rsa(
+    n: usize,
+    group_size: usize,
+    n_arr: &[u8],
+    e_arr: &[u8],
+    leaf_index: usize,
+) -> Result<MerkleProofResultWasm, String> {
+    let pub_keys = parse_pubkey_entries_from_raw_buf(n, e_arr, n_arr)?;
+
+    let result = create_merkle_tree_with_proof_rsa(&pub_keys, group_size, leaf_index)
+        .map_err(|e| format!("{:?}", e))?;
+    Ok(MerkleProofResultWasm {
+        proof: result.proof,
+        leaf_hash: result.leaf_hash,
     })
 }

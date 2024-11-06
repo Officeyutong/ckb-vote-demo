@@ -34,7 +34,7 @@ use signature_tools::{
     candidate::{encode_candidate_cell, Candidate},
     check_size_and_write,
     rsa_tools::{
-        create_signature_rsa, encode_public_key_cell, encode_public_key_index_cell,
+        create_signature, encode_public_key_cell, encode_public_key_index_cell,
         PublicKeyIndexEntry,
     },
 };
@@ -360,7 +360,7 @@ fn main() -> anyhow::Result<()> {
             let block_index = idx % args.chunk_size;
             let ring = &public_key_hashes[belonging_block];
             let signature =
-                create_signature_rsa(&ring.2, private_key, block_index, &candidate_target.id)
+                create_signature(&ring.2, private_key, block_index, &candidate_target.id)
                     .unwrap();
             let mut buf = vec![];
             buf.push(0); // Don't use witness
