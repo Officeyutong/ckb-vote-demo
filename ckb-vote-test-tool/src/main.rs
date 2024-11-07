@@ -18,24 +18,26 @@ use ckb_sdk::{
 use ckb_types::{
     bytes::Bytes,
     core::{BlockView, DepType, ScriptHashType},
-    packed::{Byte32, CellDep, CellOutput, OutPoint, Script, WitnessArgs},
+    packed::{Byte32, CellDep, CellOutput, OutPoint, Script, WitnessArgs, WitnessArgsBuilder},
     prelude::{Entity, Pack},
     H256,
 };
 use ckb_types::{core::TransactionView, prelude::Builder};
 use clap::Parser;
-use fallible_iterator::FallibleIterator;
 use rand::{thread_rng, Rng};
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
-use rsa::{RsaPrivateKey, RsaPublicKey};
+use rsa::RsaPrivateKey;
 use signature_tools::{
     candidate::{encode_candidate_cell, Candidate},
     check_size_and_write,
     rsa_tools::{
-        create_signature, encode_public_key_cell, encode_public_key_index_cell,
-        PublicKeyIndexEntry,
+        create_signature,
+        merkle_tree::{
+            create_merkle_tree_with_proof_rsa, create_merkle_tree_with_root_hash_rsa,
+            MerkleProofResult,
+        },
     },
 };
 
@@ -56,10 +58,10 @@ struct Args {
     #[arg(default_value_t=String::from("http://127.0.0.1:9000"))]
     /// URL of rpc server
     rpc_url: String,
-    #[arg(long,default_value_t=String::from("0x2d9a206deac24746ec531f1505c0daaf846cf92a976380df0b350f59fa3a6561"))]
+    #[arg(long,default_value_t=String::from("0xe3067794f05a9f1fa716bd28dd703f99cdf174492ade183331cc7882aca85919"))]
     /// Code hash of the type script
     typescript_code_hash: String,
-    #[arg(long,default_value_t=String::from("0x46e5f3aab4e2ec522fef6d943cd75b242e224e33759c9400a91186fcc76b9757"))]
+    #[arg(long,default_value_t=String::from("0x2f2e4802e64c29593da5d073a77424bc5ecdcad17f3b27fc17e05c0a82c89e06"))]
     /// Outpoint of the typescript, index defaults to 0
     typescript_out_point_tx: String,
 }
@@ -125,7 +127,7 @@ impl CellPublisher {
         &mut self,
         data: &[u8],
         receiver: &Address,
-        witness: Option<&[u8]>,
+        output_type_witness: Option<&[u8]>,
         output_type_script: Option<(H256, ScriptHashType)>,
         extra_cell_dep: Vec<CellDep>,
     ) -> anyhow::Result<(H256, u32)> {
@@ -133,7 +135,7 @@ impl CellPublisher {
             .build_transaction(
                 receiver.clone(),
                 data,
-                witness,
+                output_type_witness,
                 output_type_script,
                 extra_cell_dep,
             )
@@ -191,7 +193,7 @@ impl CellPublisher {
         &mut self,
         receiver: Address,
         data: &[u8],
-        witness: Option<&[u8]>,
+        output_type_witness: Option<&[u8]>,
         output_type_script: Option<(H256, ScriptHashType)>,
         extra_cell_dep: Vec<CellDep>,
     ) -> anyhow::Result<TransactionView> {
@@ -231,12 +233,18 @@ impl CellPublisher {
                     .pack(),
             )
             .build();
+
         let builder = SimpleTransferBuilderWithWitness {
             outputs: vec![(
                 output,
                 Bytes::copy_from_slice(data),
-                witness
-                    .map(|x| Bytes::copy_from_slice(x))
+                output_type_witness
+                    .map(|x| {
+                        WitnessArgsBuilder::default()
+                            .output_type(Some(Bytes::copy_from_slice(x)).pack())
+                            .build()
+                            .as_bytes()
+                    })
                     .unwrap_or_else(|| Default::default()),
             )],
             extra_cell_dep,
@@ -277,7 +285,6 @@ fn main() -> anyhow::Result<()> {
         .with_context(|| anyhow!("Failed to parse typescript outpoint"))?;
     let keys = {
         let done_count = AtomicUsize::new(0);
-
         (0..args.test_user_count)
             .into_par_iter()
             .map(|_| {
@@ -293,37 +300,20 @@ fn main() -> anyhow::Result<()> {
             .collect::<Vec<_>>()
     };
     let mut publisher = CellPublisher::new(&admin_addr, admin_private_key, &args.rpc_url);
-    let public_key_hashes =
-        fallible_iterator::convert(keys.chunks(args.chunk_size).enumerate().map(
-            |(idx, chunk)| -> anyhow::Result<(H256, u32, Vec<RsaPublicKey>)> {
-                log::info!("Publishing chunk {}", idx + 1);
+    let merkle_root_cell = {
+        let mut data = create_merkle_tree_with_root_hash_rsa(&keys, args.chunk_size)
+            .with_context(|| anyhow!("Failed to create merkle tree root"))?;
+        data.write_all(&(keys.len() as u32).to_le_bytes()).unwrap();
+        data.write_all(
+            &(keys.len() as u32)
+                .div_ceil(args.chunk_size as _)
+                .to_le_bytes(),
+        )
+        .unwrap();
 
-                let data = encode_public_key_cell(chunk);
-                let (txhash, index) = publisher
-                    .publish_bytes_cell(&data, &admin_addr, None, None, vec![])
-                    .with_context(|| anyhow!("Failed to publish chunk {}", idx + 1))?;
-
-                log::info!("Published chunk {}", idx + 1);
-                Ok((
-                    txhash,
-                    index,
-                    chunk.into_iter().map(|x| x.to_public_key()).collect(),
-                ))
-            },
-        ))
-        .collect::<Vec<_>>()?;
-    let index_cell = {
-        let mut result = Vec::<PublicKeyIndexEntry>::default();
-        for (tx, index, _) in public_key_hashes.iter() {
-            result.push(PublicKeyIndexEntry {
-                hash: tx.as_bytes().to_vec(),
-                index: *index,
-            });
-        }
-        let encoded = encode_public_key_index_cell(&result);
         publisher
-            .publish_bytes_cell(&encoded, &admin_addr, None, None, vec![])
-            .with_context(|| anyhow!("Failed to publish public key index cell"))?
+            .publish_bytes_cell(&data, &admin_addr, None, None, vec![])
+            .with_context(|| anyhow!("Failed to publish merkle root cell"))?
     };
 
     let (candidates, candidate_cell) = {
@@ -346,7 +336,9 @@ fn main() -> anyhow::Result<()> {
     struct VoteData {
         candidate_id: [u8; 4],
         vote_cell_data: Vec<u8>,
-        public_key_cell: (H256, u32),
+        witness_data: Vec<u8>,
+        // merkle_proof: Vec<u8>,
+        // leaf_index: usize,
     }
 
     let done_count = AtomicUsize::new(0);
@@ -358,26 +350,52 @@ fn main() -> anyhow::Result<()> {
             let candidate_target = &candidates[rng.gen_range(0..candidates.len())];
             let belonging_block = idx / args.chunk_size;
             let block_index = idx % args.chunk_size;
-            let ring = &public_key_hashes[belonging_block];
+            let ring_keys = &keys[belonging_block * args.chunk_size
+                ..((belonging_block + 1) * args.chunk_size).min(keys.len())];
             let signature =
-                create_signature(&ring.2, private_key, block_index, &candidate_target.id)
+                create_signature(&ring_keys, private_key, block_index, &candidate_target.id)
                     .unwrap();
-            let mut buf = vec![];
-            buf.push(0); // Don't use witness
-            buf.write_all(&candidate_target.id).unwrap();
-            check_size_and_write(&mut buf, &signature.c, 256).unwrap();
-            for item in signature.r_and_pubkey.iter() {
-                check_size_and_write(&mut buf, &item.r, 256).unwrap();
-            }
-            check_size_and_write(&mut buf, &signature.i, 256).unwrap();
+            let MerkleProofResult {
+                proof,
+                leaf_hash: _,
+            } = create_merkle_tree_with_proof_rsa(&keys, args.chunk_size, belonging_block)
+                .with_context(|| anyhow!("Failed to create merkle proof"))
+                .unwrap();
+
+            let vote_cell_data = {
+                let mut buf = vec![0u8; 0];
+                buf.write_all(&candidate_target.id).unwrap();
+                check_size_and_write(&mut buf, &signature.i, 256).unwrap();
+                buf
+            };
+            let witness_data = {
+                let mut buf = vec![0u8; 0];
+                check_size_and_write(&mut buf, &signature.c, 256).unwrap();
+                buf.write_all(&(signature.r_and_pubkey.len() as u32).to_le_bytes())
+                    .unwrap();
+                for item in signature.r_and_pubkey.iter() {
+                    check_size_and_write(&mut buf, &item.r, 256).unwrap();
+                }
+                for item in signature.r_and_pubkey.iter() {
+                    check_size_and_write(&mut buf, &item.n, 256).unwrap();
+                }
+                for item in signature.r_and_pubkey.iter() {
+                    check_size_and_write(&mut buf, &item.e, 4).unwrap();
+                }
+                buf.write_all(&(belonging_block as u32).to_le_bytes())
+                    .unwrap();
+                buf.write_all(&(proof.len() as u32).to_le_bytes()).unwrap();
+                buf.write_all(&proof).unwrap();
+                buf
+            };
             log::info!(
                 "{} sign done",
                 done_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
             );
             VoteData {
                 candidate_id: candidate_target.id.clone(),
-                public_key_cell: (ring.0.clone(), ring.1.clone()),
-                vote_cell_data: buf,
+                vote_cell_data,
+                witness_data,
             }
         })
         .collect::<Vec<_>>();
@@ -390,7 +408,7 @@ fn main() -> anyhow::Result<()> {
             .publish_bytes_cell(
                 &item.vote_cell_data,
                 &admin_addr,
-                None,
+                Some(&item.witness_data),
                 Some((ts_code_hash.clone(), ScriptHashType::Data1)),
                 vec![
                     CellDep::new_builder()
@@ -401,8 +419,8 @@ fn main() -> anyhow::Result<()> {
                         .build(),
                     CellDep::new_builder()
                         .out_point(OutPoint::new(
-                            Byte32::from_slice(item.public_key_cell.0.as_bytes()).unwrap(),
-                            item.public_key_cell.1,
+                            Byte32::from_slice(merkle_root_cell.0.as_bytes()).unwrap(),
+                            merkle_root_cell.1,
                         ))
                         .build(),
                     CellDep::new_builder()
@@ -421,7 +439,10 @@ fn main() -> anyhow::Result<()> {
         .into_iter()
         .map(|(key, val)| (format!("{:08X}", u32::from_le_bytes(key)), val))
         .collect::<HashMap<_, _>>();
-    println!("Public key index cell: {}:{}", index_cell.0, index_cell.1);
+    println!(
+        "Merkle tree root cell: {}:{}",
+        merkle_root_cell.0, merkle_root_cell.1
+    );
     println!("Candidate cell: {}:{}", candidate_cell.0, candidate_cell.1);
     println!(
         "{}",

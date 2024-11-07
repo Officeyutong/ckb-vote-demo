@@ -47,9 +47,8 @@ impl RSASignature {
     }
 }
 
-
-pub fn create_signature(
-    all_keys: &[RsaPublicKey],
+pub fn create_signature<T: PublicKeyParts>(
+    all_keys: &[T],
     signer_private_key: &RsaPrivateKey,
     signer: usize,
     message: &[u8],
