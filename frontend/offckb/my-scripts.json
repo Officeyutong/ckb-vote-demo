@@ -1,13 +1,13 @@
 {
   "devnet": {
     "ring-signature-verify": {
-      "codeHash": "0x2d9a206deac24746ec531f1505c0daaf846cf92a976380df0b350f59fa3a6561",
+      "codeHash": "0xe3067794f05a9f1fa716bd28dd703f99cdf174492ade183331cc7882aca85919",
       "hashType": "data1",
       "cellDeps": [
         {
           "cellDep": {
             "outPoint": {
-              "txHash": "0x46e5f3aab4e2ec522fef6d943cd75b242e224e33759c9400a91186fcc76b9757",
+              "txHash": "0x0db1cfb5095e97aed932da17a53514bfcaf07f47977bad4702141b9d132bf709",
               "index": 0
             },
             "depType": "code"

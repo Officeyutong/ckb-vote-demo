@@ -12,7 +12,6 @@ const PageConnectWallet: React.FC<{}> = () => {
         wallet,
         signerInfo,
     } = cccConnector.useCcc();
-    console.log(wallet);
     const [addresses, setAddresses] = useState<string[] | null>(null);
     const [internalAddress, setInternalAddress] = useState("");
     const [recommendedAddress, settRecommendedAddress] = useState("");
@@ -29,7 +28,7 @@ const PageConnectWallet: React.FC<{}> = () => {
 
                 setAddresses(addresses.map(s => s.toString()));
                 const result = await cccClient.getBalance(addresses.map(s => s.script));
-                console.log("calling, addresses=", addresses, "result=", result);
+                // console.log("calling, addresses=", addresses, "result=", result);
                 setBalance(result);
                 setLoaded(true);
                 setInternalAddress(await signer.getInternalAddress());

@@ -138,7 +138,7 @@ pub fn derive_rsa_key_pair_form_rand_seed(seed: &[u8]) -> Result<RsaKeyPair, Str
         d: privkey.d().to_bytes_le(),
     })
 }
-
+#[wasm_bindgen]
 pub fn create_merkle_tree_root_rsa(
     n: usize,
     group_size: usize,
@@ -157,6 +157,7 @@ pub struct MerkleProofResultWasm {
     pub proof: Vec<u8>,
     pub leaf_hash: Vec<u8>,
 }
+#[wasm_bindgen]
 pub fn create_merkle_tree_proof_rsa(
     n: usize,
     group_size: usize,
@@ -165,7 +166,7 @@ pub fn create_merkle_tree_proof_rsa(
     leaf_index: usize,
 ) -> Result<MerkleProofResultWasm, String> {
     let pub_keys = parse_pubkey_entries_from_raw_buf(n, e_arr, n_arr)?;
-
+    log(&format!("pub keys length: {}", n));
     let result = create_merkle_tree_with_proof_rsa(&pub_keys, group_size, leaf_index)
         .map_err(|e| format!("{:?}", e))?;
     Ok(MerkleProofResultWasm {
