@@ -8,6 +8,7 @@ use ckb_std::{
     error::SysError,
     high_level::{load_cell_data, load_witness},
 };
+use rs_merkle::MerkleProof;
 use sha2::{Digest, Sha256};
 use utils::{add_mod_expand, mul_mod_expand, power_mod};
 
@@ -30,12 +31,14 @@ pub enum VoteError {
     ItemMissing,
     LengthNotEnough,
     Encoding,
-    BadSignature,
+    BadSignature = 51,
     BadCandidateId,
     BadCandidateCellFormat,
     BadPublicKeyCellFormat,
     MissingDependency,
     BadWitness,
+    BadMerkleProof,
+    InvalidMerkleRootHashLength,
     Unknown,
 }
 
@@ -55,8 +58,9 @@ impl From<SysError> for VoteError {
 }
 
 const VOTE_CELL_INDEX: usize = 0;
-const PUBLIC_KEY_CELL_DEP_INDEX: usize = 1;
 const CANDIDATE_CELL_DEP_INDEX: usize = 0;
+const MERKLE_ROOT_HASH_CELL_DEP_INDEX: usize = 1;
+
 const WITNESS_INDEX: usize = 0;
 pub fn program_entry() -> i8 {
     ckb_std::debug!("Entered");
@@ -67,6 +71,7 @@ pub fn program_entry() -> i8 {
 }
 
 fn verify_candidate(candidate_id: &[u8]) -> Result<(), VoteError> {
+    ckb_std::debug!("Veryfing candidate id {:?}", candidate_id);
     // Verify candidate cell data..
     let candidate_cell_data = load_cell_data(CANDIDATE_CELL_DEP_INDEX, Source::CellDep)?;
     let n = u16::from_le_bytes([candidate_cell_data[0], candidate_cell_data[1]]) as usize;
@@ -146,52 +151,121 @@ fn verify_signature(
     Ok(())
 }
 
-fn verify_all() -> Result<(), VoteError> {
-    let public_key_cell_data = load_cell_data(PUBLIC_KEY_CELL_DEP_INDEX, Source::CellDep)?;
-    let ring_size = u16::from_le_bytes([public_key_cell_data[0], public_key_cell_data[1]]) as usize;
-    ckb_std::debug!("ring_size={}", ring_size);
-    let vote_cell_data = load_cell_data(VOTE_CELL_INDEX, Source::Output)?;
+fn verify_merkle_proof(
+    proof: &[u8],
+    leaf_count: usize,
+    leaf_index: usize,
+    root_hash: &[u8],
+    ring_size: usize,
+    e_arr: &[u8],
+    n_arr: &[u8],
+) -> Result<(), VoteError> {
+    ckb_std::debug!("Received proof {:?}", proof);
+    ckb_std::debug!(
+        "leaf_count={}, leaf_index={}, root_hash={:?}",
+        leaf_count,
+        leaf_index,
+        root_hash
+    );
 
-    let use_witness = vote_cell_data[0] == 1;
-
-    verify_candidate(&vote_cell_data[1..1 + 4])?;
-    ckb_std::debug!("candidate verified");
-    let witness_data = if use_witness {
-        Some(load_witness(WITNESS_INDEX, Source::Output)?)
-    } else {
-        None
+    let leaf_hash: [u8; 32] = {
+        let mut hasher = Sha256::new();
+        for i in 0..ring_size {
+            hasher.update(&n_arr[i * 256..(i + 1) * 256]);
+            hasher.update(&e_arr[i * 4..(i + 1) * 4]);
+        }
+        hasher.finalize().try_into().unwrap()
     };
-    let (c, r_arr, image) = if use_witness {
-        let witness_reader = WitnessArgsReader::from_slice(witness_data.as_ref().unwrap())
-            .map_err(|e| {
-                ckb_std::debug!("Failed to read witness: {}", e);
-                VoteError::BadWitness
-            })?;
+    ckb_std::debug!("Leaf hash={:?}", leaf_hash);
+    let root_hash: [u8; 32] = root_hash
+        .try_into()
+        .map_err(|_| VoteError::InvalidMerkleRootHashLength)?;
+
+    let proof = MerkleProof::<rs_merkle::algorithms::Sha256>::from_bytes(proof).map_err(|e| {
+        ckb_std::debug!("Failed to parse merkle proof: {}", e);
+        VoteError::BadMerkleProof
+    })?;
+    if proof.verify(root_hash, &[leaf_index], &[leaf_hash], leaf_count) {
+        Ok(())
+    } else {
+        Err(VoteError::BadMerkleProof)
+    }
+}
+
+fn verify_all() -> Result<(), VoteError> {
+    let merkle_tree_root_cell_data =
+        load_cell_data(MERKLE_ROOT_HASH_CELL_DEP_INDEX, Source::CellDep)?;
+    let merkle_root_hash = &merkle_tree_root_cell_data[0..32];
+    let user_count =
+        u32::from_le_bytes(merkle_tree_root_cell_data[32..36].try_into().unwrap()) as usize;
+    let merkle_leaf_count =
+        u32::from_le_bytes(merkle_tree_root_cell_data[36..40].try_into().unwrap()) as usize;
+    ckb_std::debug!(
+        "merkle leaf count = {}, user count = {}",
+        merkle_leaf_count,
+        user_count
+    );
+
+    let vote_cell_data = load_cell_data(VOTE_CELL_INDEX, Source::Output)?;
+    verify_candidate(&vote_cell_data[0..4])?;
+    ckb_std::debug!("candidate verified");
+    let witness_data = load_witness(WITNESS_INDEX, Source::Output)?;
+
+    let output_type_witness = {
+        let witness_reader = WitnessArgsReader::from_slice(&witness_data).map_err(|e| {
+            ckb_std::debug!("Failed to read witness: {}", e);
+            VoteError::BadWitness
+        })?;
         let output_type_witness = witness_reader
             .output_type()
             .to_opt()
             .ok_or(VoteError::MissingDependency)?
             .raw_data();
-        (
-            &output_type_witness[0..256],
-            &output_type_witness[256..256 + 256 * ring_size],
-            &vote_cell_data[1 + 4..1 + 4 + 256],
-        )
-    } else {
-        (
-            &vote_cell_data[5..5 + 256],
-            &vote_cell_data[5 + 256..5 + 256 + 256 * ring_size],
-            &vote_cell_data[5 + 256 + 256 * ring_size..5 + 256 + 256 * ring_size + 256],
-        )
+        output_type_witness
     };
+    let ring_size = u32::from_le_bytes([
+        output_type_witness[256],
+        output_type_witness[257],
+        output_type_witness[258],
+        output_type_witness[259],
+    ]) as usize;
+    ckb_std::debug!("ring_size={}", ring_size);
+
+    let (e_arr, n_arr) = {
+        let mut cursor = 256 + 4 + 256 * ring_size;
+        let n_arr = &output_type_witness[cursor..cursor + ring_size * 256];
+        cursor += ring_size * 256;
+        let e_arr = &output_type_witness[cursor..cursor + ring_size * 4];
+        cursor += ring_size * 4;
+        let leaf_index =
+            u32::from_le_bytes(output_type_witness[cursor..cursor + 4].try_into().unwrap())
+                as usize;
+        cursor += 4;
+        let proof_length =
+            u32::from_le_bytes(output_type_witness[cursor..cursor + 4].try_into().unwrap())
+                as usize;
+        cursor += 4;
+        let proof = &output_type_witness[cursor..cursor + proof_length];
+        verify_merkle_proof(
+            proof,
+            merkle_leaf_count,
+            leaf_index,
+            merkle_root_hash,
+            ring_size,
+            e_arr,
+            n_arr,
+        )?;
+        (e_arr, n_arr)
+    };
+    ckb_std::debug!("merkle proof verified");
     verify_signature(
         ring_size,
-        &vote_cell_data[1..1 + 4],
-        &public_key_cell_data[2..2 + 256 * ring_size],
-        &public_key_cell_data[2 + 256 * ring_size..],
-        c,
-        r_arr,
-        image,
+        &vote_cell_data[0..4],
+        n_arr,
+        e_arr,
+        &output_type_witness[0..256],
+        &output_type_witness[256 + 4..256 + 4 + 256 * ring_size],
+        &vote_cell_data[4..4 + 256],
     )?;
     ckb_std::debug!("signature verified");
     Ok(())

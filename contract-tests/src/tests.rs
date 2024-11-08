@@ -1,11 +1,12 @@
 use std::io::Write;
+use std::sync::atomic::AtomicUsize;
 
 use crate::Loader;
 use ckb_testtool::builtin::ALWAYS_SUCCESS;
 use ckb_testtool::bytes::Bytes;
 use ckb_testtool::ckb_types::core::TransactionBuilder;
 use ckb_testtool::ckb_types::packed::{CellDep, CellInput, CellOutput, ScriptOpt, WitnessArgs};
-use ckb_testtool::ckb_types::prelude::{Builder, Unpack};
+use ckb_testtool::ckb_types::prelude::Builder;
 use ckb_testtool::ckb_types::prelude::{Entity, Pack};
 use ckb_testtool::{ckb_types::packed::OutPoint, context::Context};
 use rand::seq::SliceRandom;
@@ -14,50 +15,40 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rsa::RsaPrivateKey;
 use signature_tools::candidate::{encode_candidate_cell, Candidate};
 use signature_tools::check_size_and_write;
-use signature_tools::rsa_tools::{create_signature, encode_public_key_cell, encode_public_key_index_cell, PublicKeyIndexEntry};
+use signature_tools::rsa_tools::create_signature;
+use signature_tools::rsa_tools::merkle_tree::{
+    create_merkle_tree_with_proof_rsa, create_merkle_tree_with_root_hash_rsa, MerkleProofResult,
+};
 
 const KEY_COUNT: usize = 1000;
-const CHUNK_SIZE: usize = 450;
+const CHUNK_SIZE: usize = 15;
 const CANDIDATE_COUNT: usize = 100;
 const MAX_CYCLES: u64 = 35_0000_0000;
 
 #[derive(Debug)]
 struct PreparedState {
     #[allow(unused)]
-    public_key_index_cell: OutPoint,
-    public_key_cells: Vec<OutPoint>,
     candidate_cell: OutPoint,
     keys: Vec<RsaPrivateKey>,
     candidates: Vec<Candidate>,
+    merkle_root_cell: OutPoint,
 }
 
 fn prepare(ctx: &mut Context) -> PreparedState {
+    let generated_count = AtomicUsize::new(0);
     let keys = (0..KEY_COUNT)
         .into_par_iter()
-        .map(|idx| {
+        .map(|_| {
             let mut rng = rand::thread_rng();
             let priv_key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
-            println!("Key generating done {}", idx);
+            println!(
+                "Key generating done {}",
+                generated_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+            );
             priv_key
         })
         .collect::<Vec<_>>();
-    let key_cells = keys
-        .chunks(CHUNK_SIZE)
-        .enumerate()
-        .map(|(_, chunk)| ctx.deploy_cell(encode_public_key_cell(chunk).into()))
-        .collect::<Vec<_>>();
-    let key_index_cell = {
-        let buf = encode_public_key_index_cell(
-            &key_cells
-                .iter()
-                .map(|v| PublicKeyIndexEntry {
-                    hash: v.tx_hash().raw_data().to_vec(),
-                    index: v.index().unpack(),
-                })
-                .collect::<Vec<_>>(),
-        );
-        ctx.deploy_cell(buf.into())
-    };
+
     let mut rng = rand::thread_rng();
     let candidates = (0..CANDIDATE_COUNT)
         .map(|idx| Candidate {
@@ -66,12 +57,20 @@ fn prepare(ctx: &mut Context) -> PreparedState {
         })
         .collect::<Vec<_>>();
     let candidate_cell = { ctx.deploy_cell(encode_candidate_cell(&candidates).into()) };
+    let merkle_root = {
+        let mut data = create_merkle_tree_with_root_hash_rsa(&keys, CHUNK_SIZE).unwrap();
+        data.write_all(&(keys.len() as u32).to_le_bytes()).unwrap();
+        data.write_all(&(keys.len().div_ceil(CHUNK_SIZE) as u32).to_le_bytes())
+            .unwrap();
+
+        data
+    };
+
     PreparedState {
         candidate_cell,
         candidates,
         keys,
-        public_key_cells: key_cells,
-        public_key_index_cell: key_index_cell,
+        merkle_root_cell: ctx.deploy_cell(merkle_root.into()),
     }
 }
 
@@ -98,6 +97,11 @@ fn test_verify_signature() {
         &selected_candidate.id,
     )
     .unwrap();
+    let MerkleProofResult {
+        proof,
+        leaf_hash: _,
+    } = create_merkle_tree_with_proof_rsa(&state.keys, CHUNK_SIZE, signer_block).unwrap();
+
     let always_success_script_op = ctx.deploy_cell(ALWAYS_SUCCESS.clone());
     let always_success_script = ctx
         .build_script(&always_success_script_op, Default::default())
@@ -108,7 +112,7 @@ fn test_verify_signature() {
             .out_point(state.candidate_cell)
             .build(),
         CellDep::new_builder()
-            .out_point(state.public_key_cells[signer_block].clone())
+            .out_point(state.merkle_root_cell.clone())
             .build(),
         CellDep::new_builder()
             .out_point(always_success_script_op)
@@ -133,7 +137,6 @@ fn test_verify_signature() {
 
     let (tx_output, tx_output_data) = {
         let mut cell_data = vec![0u8; 0];
-        cell_data.push(1); // R[] and I are in witness
         cell_data.write_all(&selected_candidate.id).unwrap();
         check_size_and_write(&mut cell_data, &signature.i, 256).unwrap();
         let type_script = ctx.build_script(&script_out_point, Bytes::new()).unwrap();
@@ -148,9 +151,25 @@ fn test_verify_signature() {
     let witness = {
         let mut witness_data = vec![0u8; 0];
         check_size_and_write(&mut witness_data, &signature.c, 256).unwrap();
+        witness_data
+            .write_all(&(signature.r_and_pubkey.len() as u32).to_le_bytes())
+            .unwrap();
         for item in signature.r_and_pubkey.iter() {
             check_size_and_write(&mut witness_data, &item.r, 256).unwrap();
         }
+        for item in signature.r_and_pubkey.iter() {
+            check_size_and_write(&mut witness_data, &item.n, 256).unwrap();
+        }
+        for item in signature.r_and_pubkey.iter() {
+            check_size_and_write(&mut witness_data, &item.e, 4).unwrap();
+        }
+        witness_data
+            .write_all(&(signer_block as u32).to_le_bytes())
+            .unwrap();
+        witness_data
+            .write_all(&(proof.len() as u32).to_le_bytes())
+            .unwrap();
+        witness_data.write_all(&proof).unwrap();
         vec![WitnessArgs::new_builder()
             .output_type(Some(Bytes::from(witness_data)).pack())
             .lock(Option::<Bytes>::None.pack())
@@ -165,27 +184,28 @@ fn test_verify_signature() {
             .inputs(tx_input.clone())
             .outputs(tx_output.clone())
             .outputs_data(tx_output_data.pack())
-            .witnesses(witness)
+            .witnesses(witness.clone())
             .build();
         tx.as_advanced_builder().build()
     };
     let cycles = ctx.verify_tx(&tx, MAX_CYCLES).unwrap();
     println!("Cycles: {}", cycles);
     // Test bad signature
-    let witness = {
-        let mut witness_data = vec![0u8; 0];
-        check_size_and_write(&mut witness_data, &signature.c, 256).unwrap();
-        witness_data[0] ^= 1; // Do some modification
-        for item in signature.r_and_pubkey.iter() {
-            check_size_and_write(&mut witness_data, &item.r, 256).unwrap();
-        }
-        vec![WitnessArgs::new_builder()
-            .output_type(Some(Bytes::from(witness_data)).pack())
-            .lock(Option::<Bytes>::None.pack())
-            .input_type(Option::<Bytes>::None.pack())
-            .build()
-            .as_bytes()
-            .pack()]
+    let (tx_output, tx_output_data) = {
+        let mut cell_data = vec![0u8; 0];
+        cell_data.write_all(&selected_candidate.id).unwrap();
+        check_size_and_write(&mut cell_data, &signature.i, 256).unwrap();
+        // Create an invalid signature
+        cell_data[0] ^= 1;
+
+        let type_script = ctx.build_script(&script_out_point, Bytes::new()).unwrap();
+        (
+            vec![CellOutput::new_builder()
+                .capacity((cell_data.len() as u64).pack())
+                .type_(ScriptOpt::new_builder().set(Some(type_script)).build())
+                .build()],
+            vec![Bytes::from(cell_data)],
+        )
     };
     let tx = {
         let tx = TransactionBuilder::default()

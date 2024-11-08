@@ -21,7 +21,7 @@ use ckb_types::{
     H256,
 };
 use clap::Parser;
-use frozenset::{Freeze, FrozenMap, FrozenSet};
+use frozenset::{Freeze, FrozenMap};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 #[derive(Parser, Debug)]
 struct Args {
@@ -29,41 +29,17 @@ struct Args {
     #[arg(short = 'c')]
     candidate_cell_tx: String,
     // Tx hash of public key index cell, in hex format
-    #[arg(short = 'p')]
-    public_key_index_cell_tx: String,
+    #[arg(short = 'm')]
+    merkle_tree_root_cell_tx: String,
 
     /// Script hash for vote cells
     #[arg(long = "tx", short = 't')]
     signature_verify_type_script_hash: String,
     // URL of ckb node
-    #[arg(default_value_t=String::from("http://127.0.0.1:9000"))]
+    #[arg(default_value_t=String::from("http://127.0.0.1:8114"))]
     rpc_url: String,
 }
 
-#[derive(PartialEq, Eq, Hash, Debug)]
-struct PublicKeyCellEntry {
-    hash: H256,
-    index: u32,
-}
-
-fn parse_public_key_index_cell(buf: &[u8]) -> anyhow::Result<Vec<PublicKeyCellEntry>> {
-    let mut result = vec![];
-    let n = u16::from_le_bytes([buf[0], buf[1]]) as usize;
-    for i in 0..n {
-        let start = 2 + i * (32);
-        let hash = H256::from_slice(&buf[start..start + 32])
-            .with_context(|| anyhow!("Failed to parse public key index {}", i))?;
-        let index_bytes = &buf[2 + (32) * n + i * 4..2 + (32) * n + (i + 1) * 4];
-        let index = u32::from_le_bytes([
-            index_bytes[0],
-            index_bytes[1],
-            index_bytes[2],
-            index_bytes[3],
-        ]);
-        result.push(PublicKeyCellEntry { hash, index });
-    }
-    Ok(result)
-}
 fn parse_candidate_cell(buf: &[u8]) -> anyhow::Result<HashMap<[u8; 4], String>> {
     let mut result = HashMap::new();
     let n = u16::from_le_bytes([buf[0], buf[1]]) as usize;
@@ -84,34 +60,28 @@ fn parse_candidate_cell(buf: &[u8]) -> anyhow::Result<HashMap<[u8; 4], String>> 
 }
 
 struct VoteValidator {
-    pub_key_cells: FrozenSet<PublicKeyCellEntry>,
+    // pub_key_cells: FrozenSet<PublicKeyCellEntry>,
     candidate: FrozenMap<[u8; 4], String>,
+    merkle_tree_root_cell_tx: (H256, u32),
 }
 
 impl VoteValidator {
     pub fn validate_tx(&self, tx: &ckb_jsonrpc_types::Transaction) -> anyhow::Result<()> {
-        let cell_dep_2 = tx
-            .cell_deps
-            .get(1)
-            .ok_or_else(|| anyhow!("Missing second celldep, which should be public key cell"))?;
-        if !self.pub_key_cells.contains(&PublicKeyCellEntry {
-            hash: cell_dep_2.out_point.tx_hash.clone(),
-            index: cell_dep_2.out_point.index.into(),
-        }) {
-            bail!("Bad public key cell");
+        let cell_dep_2 = tx.cell_deps.get(1).ok_or_else(|| {
+            anyhow!("Missing second celldep, which should be merkle tree root cell")
+        })?;
+        if self.merkle_tree_root_cell_tx.0 != cell_dep_2.out_point.tx_hash
+            || self.merkle_tree_root_cell_tx.1 != cell_dep_2.out_point.index.value()
+        {
+            bail!("Bad merkle tree root cell");
         }
         let vote_cell_data = &tx
             .outputs_data
             .get(0)
             .ok_or_else(|| anyhow!("Missing output data 0"))?
             .as_bytes();
-        let candidate_id = &vote_cell_data[1..5];
-        if !self.candidate.contains_key(&[
-            candidate_id[0],
-            candidate_id[1],
-            candidate_id[2],
-            candidate_id[3],
-        ]) {
+        let candidate_id: [u8; 4] = vote_cell_data[0..4].try_into().unwrap();
+        if !self.candidate.contains_key(&candidate_id) {
             bail!("Invalid candidate id: {:?}", candidate_id);
         }
 
@@ -132,26 +102,23 @@ fn main() -> anyhow::Result<()> {
         .with_context(|| anyhow!("Failed to start logger"))?;
     let args = Args::parse();
     let client = CkbRpcClient::new(&args.rpc_url);
-    let pub_keys = {
+    let merkle_tree_root_hash: [u8; 32] = {
         let tx = client
             .get_transaction(
-                H256::from_str(&args.public_key_index_cell_tx[2..])
+                H256::from_str(&args.merkle_tree_root_cell_tx[2..])
                     .with_context(|| anyhow!("Failed to parse public key index cell tx"))?,
             )
             .with_context(|| anyhow!("Unable to get public index cell tx"))?
             .ok_or_else(|| anyhow!("Invalid public key index cell tx"))?;
-        let pub_keys = HashSet::<PublicKeyCellEntry>::from_iter(
-            parse_public_key_index_cell(
-                tx.transaction
-                    .ok_or_else(|| anyhow!("Transaction body not found"))?
-                    .get_value()?
-                    .inner
-                    .outputs_data[0]
-                    .as_bytes(),
-            )?
-            .into_iter(),
-        );
-        pub_keys
+        let data = tx
+            .transaction
+            .ok_or_else(|| anyhow!("Transaction body not found"))?
+            .get_value()?
+            .inner
+            .outputs_data[0]
+            .as_bytes()
+            .to_vec();
+        data[0..32].try_into().unwrap()
     };
     let candidates = {
         let tx = client
@@ -171,7 +138,7 @@ fn main() -> anyhow::Result<()> {
         )?
     };
 
-    log::debug!("public key cells= {:#?}", pub_keys);
+    log::debug!("merkle_tree_root_hash= {:?}", merkle_tree_root_hash);
     log::debug!("candidates = {:?}", candidates);
     type VoteCounter = HashMap<[u8; 4], usize>;
     let result = {
@@ -179,7 +146,10 @@ fn main() -> anyhow::Result<()> {
             .with_context(|| anyhow!("Failed to parse signature verify type script hash"))?;
         let tx_validator = VoteValidator {
             candidate: candidates.clone().freeze(),
-            pub_key_cells: pub_keys.freeze(),
+            merkle_tree_root_cell_tx: (
+                H256::from_str(&args.merkle_tree_root_cell_tx[2..]).unwrap(),
+                0,
+            ),
         };
         let mut last_cursor: Option<JsonBytes> = None;
         let batch_size = 500;
@@ -224,7 +194,7 @@ fn main() -> anyhow::Result<()> {
                         .validate_tx(&tx)
                         .with_context(|| anyhow!("Failed to verify tx"))
                     {
-                        log::warn!("Bad tx encountered: {:?}", e);
+                        log::debug!("Bad tx encountered: {:?}", e);
                         return Ok(None);
                     }
                     let vote_cell = tx
@@ -232,17 +202,10 @@ fn main() -> anyhow::Result<()> {
                         .get(0)
                         .ok_or_else(|| anyhow!("Missing output data 0"))?
                         .as_bytes();
-                    if vote_cell[0] == 0 {
-                        Ok(Some(VoteTarget {
-                            candidate_id: [vote_cell[1], vote_cell[2], vote_cell[3], vote_cell[4]],
-                            image: vote_cell[vote_cell.len() - 256..].to_vec(),
-                        }))
-                    } else {
-                        Ok(Some(VoteTarget {
-                            candidate_id: [vote_cell[1], vote_cell[2], vote_cell[3], vote_cell[4]],
-                            image: vote_cell[5..5 + 256].to_vec(),
-                        }))
-                    }
+                    Ok(Some(VoteTarget {
+                        candidate_id: [vote_cell[0], vote_cell[1], vote_cell[2], vote_cell[3]],
+                        image: vote_cell[4..4 + 256].to_vec(),
+                    }))
                 })
                 .collect::<Vec<_>>();
             if initial_verified.is_empty() {

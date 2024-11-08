@@ -5,7 +5,7 @@ import * as bigintConversion from 'bigint-conversion'
 import base64url from "base64url";
 import { Buffer } from "buffer";
 export type onChangeType = ((event: React.ChangeEvent<HTMLInputElement>, data: InputOnChangeData) => void);
-
+export const CHUNK_SIZE = 15;
 export const useInputValue: (text?: string) => { value: string; onChange: onChangeType } = (text: string = "") => {
     const [value, setValue] = useState(text);
     let onChange: onChangeType = useCallback((_, d) => {
@@ -35,6 +35,7 @@ export interface RSAPubKey {
     e: bigint;
     n: bigint;
 }
+
 export function encodeCandidate(data: CandidateEntry[]): ArrayBuffer {
     const buf = Buffer.alloc(2 + data.length * 104);
     let idx = 0;
@@ -69,9 +70,9 @@ export function decodeCandidate(buf: Buffer): CandidateEntry[] {
     return result;
 }
 export function encodePubKeyArray(keys: RSAPubKey[]): ArrayBuffer {
-    const buf = Buffer.alloc(2 + keys.length * (256 + 4));
+    const buf = Buffer.alloc(4 + keys.length * (256 + 4));
     let idx = 0;
-    idx = buf.writeUint16LE(keys.length);
+    idx = buf.writeUint32LE(keys.length);
     for (const item of keys) {
         const nBuf = bigintConversion.bigintToBuf(item.n, true) as ArrayBuffer;
         // bigintConversion gives us big endian, so reverse it
@@ -97,7 +98,7 @@ function reverseBuffer(buf: Buffer): Buffer {
 export function decodePubKeyArray(buf: Buffer): RSAPubKey[] {
     const result: Partial<RSAPubKey>[] = [];
     let idx = 0;
-    const n = buf.readUint16LE(); idx += 2;
+    const n = buf.readUint32LE(); idx += 4;
     for (let i = 0; i < n; i++) {
         const n = bigintConversion.bufToBigint(reverseBuffer(buf.subarray(idx, idx + 256))/* We are in little endian*/);
         idx += 256;
@@ -116,37 +117,6 @@ export interface PubkeyIndexEntry {
     txHash: Uint8Array;
 }
 
-export function encodePubkeyIndexCell(entries: PubkeyIndexEntry[]): ArrayBuffer {
-    const buf = Buffer.alloc(2 + entries.length * (32 + 4));
-    let idx = 0;
-    idx = buf.writeUint16LE(entries.length);
-    for (const item of entries) {
-        buf.set(item.txHash, idx);
-        idx += 32;
-    }
-    for (const item of entries) {
-        idx = buf.writeUint32LE(item.index, idx);
-    }
-
-    return buf.buffer;
-}
-
-export function decodePubkeyIndexCell(buf: Buffer): PubkeyIndexEntry[] {
-    const result: Partial<PubkeyIndexEntry>[] = [];
-    let idx = 0;
-    const n = buf.readUint16LE(); idx += 2;
-    for (let i = 0; i < n; i++) {
-        const txHash = new Uint8Array(buf.subarray(idx, idx + 32));
-        idx += 32;
-        result.push({ txHash });
-    }
-    for (let i = 0; i < n; i++) {
-        const index = buf.readUint32LE(idx); idx += 4;
-        result[i].index = index;
-    }
-
-    return result as PubkeyIndexEntry[];
-}
 
 export interface PreparedTx { sendTx: () => Promise<string>; tx: ccc.Transaction };
 export async function publishBytesAsCell(bytes: ArrayBuffer, lockScript: ScriptLike, signer: Signer, dataName: string): Promise<PreparedTx> {
@@ -171,4 +141,33 @@ export interface AccountData {
     addresses: Address[];
     balance: bigint;
     signer: Signer;
+}
+
+export function encodeBigIntArray(arr: bigint[], entrySize: number): Uint8Array {
+    const buf = Buffer.alloc(arr.length * entrySize);
+    let idx = 0;
+    for (const item of arr) {
+        const nBuf = bigintConversion.bigintToBuf(item, true) as ArrayBuffer;
+        buf.set(new Uint8Array(nBuf).reverse(), idx);
+        idx += entrySize;
+    }
+    const result = new Uint8Array(buf.buffer);
+    return result;
+}
+
+
+export function encodeUint32LE(x: number): Uint8Array {
+
+    return new Uint8Array([
+        x & 0xff,
+        (x >> 8) & 0xff,
+        (x >> 16) & 0xff,
+        (x >> 24) & 0xff,
+    ])
+}
+
+
+export function decodeUint32LE(x: Uint8Array): number {
+
+    return x[0] | (x[1] << 8) | (x[2] << 16) | (x[3] << 24);
 }

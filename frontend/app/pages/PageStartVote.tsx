@@ -1,23 +1,20 @@
 import { useRef, useState } from "react";
 import { Button, Dimmer, Divider, Form, Input, InputOnChangeData, Loader, Message, Modal, Progress, Table, TextArea } from "semantic-ui-react";
-import { AccountData, CandidateEntry, convertJWKNumber, encodeCandidate, encodePubKeyArray, encodePubkeyIndexCell, PreparedTx, publishBytesAsCell, randCandidateId, RSAPubKey, uint8ArrToHex, useInputValue } from "../utils";
+import { AccountData, CandidateEntry, CHUNK_SIZE, convertJWKNumber, encodeBigIntArray, encodeCandidate, encodePubKeyArray, encodeUint32LE, PreparedTx, publishBytesAsCell, randCandidateId, RSAPubKey, uint8ArrToHex } from "../utils";
 import { cccClient } from "../ccc-client";
 import _ from "lodash";
-import * as bigintConversion from 'bigint-conversion'
 import { useCcc } from "@ckb-ccc/connector-react";
-
-const CHUNK_SIZE = 450;
-
+import { create_merkle_tree_root_rsa } from "signature-tools-wasm";
 
 interface VoteTransactions {
     candidate: PreparedTx;
-    pubKeys: PreparedTx[];
+    merkleRootHash: PreparedTx;
 }
 
 interface VoteCreationResult {
     candidateCellTxHash: string;
-    publicKeyCellTxHash: string[];
-    publicKeyIndexCellTxHash: string;
+    merkleRootHash: string;
+    pubkeysData: Uint8Array;
 }
 
 enum Stage {
@@ -40,13 +37,13 @@ interface StageDataPrepared {
     stage: Stage.DATA_PREPARED;
     accountData: AccountData;
     preparedTx: VoteTransactions;
+    pubkeysData: Uint8Array;
     prompt: string;
 }
 interface StageSended {
     stage: Stage.SENDED;
     accountData: AccountData;
     preparedTx: VoteTransactions;
-    pubKeyIndexTx: PreparedTx;
     result: VoteCreationResult;
 }
 
@@ -125,8 +122,8 @@ const PageStartVote: React.FC<{}> = () => {
             }
             const accountData = stage.accountData;
             const signer = accountData.signer;
-            const chunkCount = Math.ceil(pubKeys.length / CHUNK_SIZE);
-            setTotalCount(1 + chunkCount);
+            setTotalCount(2);
+            setDoneCount(0);
             let candidateTx;
             {
                 setProgressText("Generating candidate data..");
@@ -134,24 +131,33 @@ const PageStartVote: React.FC<{}> = () => {
                 candidateTx = await publishBytesAsCell(candidatesData, accountData.addresses[0].script, signer, "candidate");
                 setDoneCount(1);
             }
-            const pubKeysTx: PreparedTx[] = [];
-            for (const [chunk, idx] of _(pubKeys).chunk(CHUNK_SIZE).map((val, idx) => [val, idx] as [RSAPubKey[], number]).value()) {
-                setProgressText(`Generating public key data (${idx + 1}/${chunkCount})`);
-                const encoded = encodePubKeyArray(chunk);
-                pubKeysTx.push(await publishBytesAsCell(encoded, accountData.addresses[0].script, signer, "pubkey chunk"));
-                setDoneCount(c => c + 1);
-            }
+            setProgressText("Generating merkle tree");
+            const merkleTreeRoot = create_merkle_tree_root_rsa(
+                pubKeys.length,
+                CHUNK_SIZE,
+                encodeBigIntArray(pubKeys.map(s => s.n), 256),
+                encodeBigIntArray(pubKeys.map(s => s.e), 4),
+            )
+
+            const merkleTreeRootTx = await publishBytesAsCell(new Uint8Array([
+                ...merkleTreeRoot,
+                ...encodeUint32LE(pubKeys.length),
+                ...encodeUint32LE(Math.ceil(pubKeys.length / CHUNK_SIZE)),
+
+            ]).buffer, accountData.addresses[0].script, signer, "merkle tree root");
+            setDoneCount(2);
+
             let requiredCkb = BigInt(0);
             requiredCkb += candidateTx.tx.getOutputsCapacity();
-            for (const tx of pubKeysTx) requiredCkb += tx.tx.getOutputsCapacity();
-            requiredCkb += BigInt(61 + 4 + 36 * pubKeysTx.length);
+            requiredCkb += merkleTreeRootTx.tx.getOutputsCapacity();
             setStage({
                 stage: Stage.DATA_PREPARED,
-                preparedTx: { candidate: candidateTx, pubKeys: pubKeysTx },
+                preparedTx: { candidate: candidateTx, merkleRootHash: merkleTreeRootTx },
                 accountData: stage.accountData,
-                prompt: `You need at least ${requiredCkb / BigInt(100000000) + BigInt(1)} CKB for these transactions. Make sure you have enough balance`
+                prompt: `You need at least ${requiredCkb / BigInt(100000000) + BigInt(1)} CKB for these transactions. Make sure you have enough balance`,
+                pubkeysData: new Uint8Array(encodePubKeyArray(pubKeys))
             })
-
+            setProgressText(null);
         } catch (e) {
             console.error(e);
             alert(e);
@@ -166,50 +172,43 @@ const PageStartVote: React.FC<{}> = () => {
         }
         console.log(stage);
         const txs = stage.preparedTx;
-        setTotalCount(1 + 1 + txs.pubKeys.length);
+        setTotalCount(1 + 1);
         setDoneCount(0);
         setProgressText("Sending candidate cell..");
         const candidateHash = await txs.candidate.sendTx();
         console.log(candidateHash);
         setDoneCount(1);
-        const pubKeyHashes: string[] = [];
-        for (const [item, index] of txs.pubKeys.map((val, idx) => [val, idx] as [PreparedTx, number])) {
-            setProgressText(`Sending public key cell (${index + 1}/${txs.pubKeys.length})`)
-            pubKeyHashes.push(await item.sendTx());
-            setDoneCount(c => c + 1);
-        }
-        setProgressText("Sending public key index cell..");
-        const pubKeyIndexData = encodePubkeyIndexCell(pubKeyHashes.map(value => ({
-            index: 0,
-            txHash: new Uint8Array(bigintConversion.hexToBuf(value, true) as ArrayBuffer)
-        })))
-        console.log(pubKeyHashes);
-        const pubKeyPreparedTx = await publishBytesAsCell(pubKeyIndexData, stage.accountData.addresses[0].script, stage.accountData.signer, "public key index");
-        const pubkeyIndexHash = await pubKeyPreparedTx.sendTx();
-        console.log(pubkeyIndexHash);
+        setProgressText("Sending merkle tree root cell..");
+        const merkleTreeRootHash = await txs.merkleRootHash.sendTx();
+        console.log(merkleTreeRootHash);
+        setDoneCount(2);
         setStage({
-            stage: Stage.SENDED, accountData: stage.accountData, preparedTx: stage.preparedTx, pubKeyIndexTx: pubKeyPreparedTx, result: {
+            stage: Stage.SENDED,
+            accountData: stage.accountData,
+            preparedTx: stage.preparedTx,
+            result: {
                 candidateCellTxHash: candidateHash,
-                publicKeyCellTxHash: pubKeyHashes,
-                publicKeyIndexCellTxHash: pubkeyIndexHash
+                merkleRootHash: merkleTreeRootHash,
+                pubkeysData: stage.pubkeysData
             }
         })
         setProgressText(null);
 
     };
-    const doSaveResult = () => {
+    const doSaveMerkleTreeLeaves = () => {
         if (stage.stage !== Stage.SENDED) {
             alert("bad stage");
             return;
         }
-        const encoder = new TextEncoder();
+        // const encoder = new TextEncoder();
         const blob = new Blob([
-            encoder.encode(JSON.stringify(stage.result))
+            // encoder.encode(JSON.stringify(stage.result))
+            stage.result.pubkeysData
         ]);
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'hashes.json';
+        a.download = 'leaves.bin';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -321,11 +320,11 @@ const PageStartVote: React.FC<{}> = () => {
                         <Message.Header>Successfully started</Message.Header>
                         <Message.Content>
                             <p>Candidate cell tx hash: {stage.result.candidateCellTxHash}, index 0</p>
-                            <p>Public key index cell tx hash: {stage.result.publicKeyIndexCellTxHash}, index 0</p>
-                            <p>For other hashes, please save the result JSON</p>
+                            <p>Merkle tree root cell tx hash: {stage.result.merkleRootHash}, index 0</p>
+                            <p>Please save these hashes and download merkle tree leaves</p>
                         </Message.Content>
                     </Message>
-                    <Button color="green" onClick={doSaveResult}>Save hashes</Button>
+                    <Button color="green" onClick={doSaveMerkleTreeLeaves}>Download merkle tree leaves</Button>
                 </>}
             </>}
         </Form>

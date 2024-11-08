@@ -26,11 +26,13 @@ pub fn create_merkle_tree_rsa<T: PublicKeyParts, P: FnMut(usize, &[u8]) -> ()>(
     let mut hashes = vec![];
     for (index, chunk) in pub_keys.chunks(group_size).enumerate() {
         let hash = create_pubkey_group_hash(chunk)?;
-
         if let Some(f) = leaf_hash_visitor.as_mut() {
             f(index, &hash);
         }
-        hashes.push(hash.try_into().unwrap());
+        hashes.push(
+            hash.try_into()
+                .map_err(|_| anyhow!("Unexpected size of sha256"))?,
+        );
     }
     let merkle_tree = MerkleTree::<rs_merkle::algorithms::Sha256>::from_leaves(&hashes);
     Ok(merkle_tree)
