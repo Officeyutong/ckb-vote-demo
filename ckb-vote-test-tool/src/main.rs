@@ -1,5 +1,9 @@
 use std::{
-    collections::HashMap, io::Write, str::FromStr, sync::atomic::AtomicUsize, time::Duration,
+    collections::{HashMap, HashSet},
+    io::Write,
+    str::FromStr,
+    sync::atomic::AtomicUsize,
+    time::Duration,
 };
 
 use anyhow::{anyhow, bail, Context};
@@ -13,7 +17,7 @@ use ckb_sdk::{
     },
     tx_builder::{CapacityBalancer, TxBuilder},
     unlock::{ScriptUnlocker, SecpSighashUnlocker},
-    Address, CkbRpcClient, ScriptId,
+    Address, AddressPayload, CkbRpcClient, ScriptId,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -26,7 +30,8 @@ use ckb_types::{core::TransactionView, prelude::Builder};
 use clap::Parser;
 use rand::{thread_rng, Rng};
 use rayon::iter::{
-    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelBridge,
+    ParallelIterator,
 };
 use rsa::RsaPrivateKey;
 use signature_tools::{
@@ -43,10 +48,10 @@ use signature_tools::{
 
 #[derive(Parser)]
 struct Args {
-    #[arg(short = 'c', default_value_t = 100)]
+    #[arg(short = 'u', default_value_t = 100)]
     /// How many users for testing
     test_user_count: usize,
-    #[arg(short = 'c', default_value_t = 20)]
+    #[arg(short = 'c', default_value_t = 15)]
     /// How many users in a ring?
     chunk_size: usize,
     #[arg(short = 'p')]
@@ -130,6 +135,7 @@ impl CellPublisher {
         output_type_witness: Option<&[u8]>,
         output_type_script: Option<(H256, ScriptHashType)>,
         extra_cell_dep: Vec<CellDep>,
+        custom_capacity: Option<u64>,
     ) -> anyhow::Result<(H256, u32)> {
         let tx = self
             .build_transaction(
@@ -138,6 +144,7 @@ impl CellPublisher {
                 output_type_witness,
                 output_type_script,
                 extra_cell_dep,
+                custom_capacity,
             )
             .with_context(|| anyhow!("Failed to call build_transaction"))?;
         let tip_num = self
@@ -154,7 +161,7 @@ impl CellPublisher {
 
         let json_tx = ckb_jsonrpc_types::TransactionView::from(tx);
         log::trace!("tx: {}", serde_json::to_string_pretty(&json_tx).unwrap());
-        log::debug!("Transaction build");
+        log::debug!("Transaction build, hash = {}", json_tx.hash);
         let tx_hash = self
             .client
             .send_transaction(
@@ -162,7 +169,7 @@ impl CellPublisher {
                 Some(ckb_jsonrpc_types::OutputsValidator::Passthrough),
             )
             .with_context(|| anyhow!("Failed to send transaction"))?;
-        let mut retry_count = 20;
+        let mut retry_count = 100;
         loop {
             if retry_count == 0 {
                 log::debug!("Failed to wait the transaction to be received");
@@ -177,7 +184,7 @@ impl CellPublisher {
                 Status::Unknown => {
                     retry_count -= 1;
                 }
-                Status::Committed | Status::Pending | Status::Proposed => {
+                Status::Committed | Status::Proposed | Status::Pending => {
                     break;
                 }
                 Status::Rejected => {
@@ -196,6 +203,7 @@ impl CellPublisher {
         output_type_witness: Option<&[u8]>,
         output_type_script: Option<(H256, ScriptHashType)>,
         extra_cell_dep: Vec<CellDep>,
+        custom_capacity: Option<u64>,
     ) -> anyhow::Result<TransactionView> {
         let sighash_unlocker = SecpSighashUnlocker::from(Box::new(self.signer.clone()) as Box<_>);
         let sighash_script_id = ScriptId::new_type(SIGHASH_TYPE_HASH.clone());
@@ -208,16 +216,16 @@ impl CellPublisher {
         let placeholder_witness = WitnessArgs::new_builder()
             .lock(Some(Bytes::from(vec![0u8; 65])).pack())
             .build();
-        let mut balancer =
+        let balancer =
             CapacityBalancer::new_simple((&self.sender_address).into(), placeholder_witness, 1000);
-        balancer.set_max_fee(Some(100_000_000));
+        // balancer.set_max_fee(Some(1_0000_0000));
         let cell_dep_resolver = {
             let genesis_block = self.client.get_block_by_number(0.into())?.unwrap();
             DefaultCellDepResolver::from_genesis(&BlockView::from(genesis_block))?
         };
         let header_dep_resolver = DefaultHeaderDepResolver::new(&self.rpc_url);
-        let capacity = (61 + 100 + 1 + data.len()) as u64 * ONE_CKB;
-
+        let capacity = custom_capacity.unwrap_or((61 + 100 + data.len()) as u64 * ONE_CKB);
+        log::debug!("capacity={}", capacity);
         let output = CellOutput::new_builder()
             .lock(Script::from(&receiver))
             .capacity(capacity.pack())
@@ -262,9 +270,14 @@ impl CellPublisher {
         Ok(tx)
     }
 }
-
+#[derive(Clone, Debug)]
+struct VoteData {
+    candidate_id: [u8; 4],
+    vote_cell_data: Vec<u8>,
+    witness_data: Vec<u8>,
+}
 fn main() -> anyhow::Result<()> {
-    flexi_logger::Logger::try_with_env_or_str("debug")
+    flexi_logger::Logger::try_with_env_or_str("info")
         .with_context(|| anyhow!("Failed to initialize logger"))?
         .start()
         .with_context(|| anyhow!("Failed to start logger"))?;
@@ -312,7 +325,7 @@ fn main() -> anyhow::Result<()> {
         .unwrap();
 
         publisher
-            .publish_bytes_cell(&data, &admin_addr, None, None, vec![])
+            .publish_bytes_cell(&data, &admin_addr, None, None, vec![], None)
             .with_context(|| anyhow!("Failed to publish merkle root cell"))?
     };
 
@@ -328,18 +341,10 @@ fn main() -> anyhow::Result<()> {
         (
             candidates,
             publisher
-                .publish_bytes_cell(&encoded, &admin_addr, None, None, vec![])
+                .publish_bytes_cell(&encoded, &admin_addr, None, None, vec![], None)
                 .with_context(|| anyhow!("Failed to publish candidate cell"))?,
         )
     };
-
-    struct VoteData {
-        candidate_id: [u8; 4],
-        vote_cell_data: Vec<u8>,
-        witness_data: Vec<u8>,
-        // merkle_proof: Vec<u8>,
-        // leaf_index: usize,
-    }
 
     let done_count = AtomicUsize::new(0);
     let voted_target = keys
@@ -348,6 +353,7 @@ fn main() -> anyhow::Result<()> {
         .map(|(idx, private_key)| {
             let mut rng = thread_rng();
             let candidate_target = &candidates[rng.gen_range(0..candidates.len())];
+
             let belonging_block = idx / args.chunk_size;
             let block_index = idx % args.chunk_size;
             let ring_keys = &keys[belonging_block * args.chunk_size
@@ -399,51 +405,175 @@ fn main() -> anyhow::Result<()> {
             }
         })
         .collect::<Vec<_>>();
-    let mut vote_result = HashMap::<[u8; 4], usize>::default();
 
-    for (idx, item) in voted_target.into_iter().enumerate() {
-        log::info!("Sending signature {}", idx + 1);
-        *vote_result.entry(item.candidate_id).or_insert(0) += 1;
-        publisher
-            .publish_bytes_cell(
-                &item.vote_cell_data,
-                &admin_addr,
-                Some(&item.witness_data),
-                Some((ts_code_hash.clone(), ScriptHashType::Data1)),
-                vec![
-                    CellDep::new_builder()
-                        .out_point(OutPoint::new(
-                            Byte32::from_slice(candidate_cell.0.as_bytes()).unwrap(),
-                            candidate_cell.1,
-                        ))
-                        .build(),
-                    CellDep::new_builder()
-                        .out_point(OutPoint::new(
-                            Byte32::from_slice(merkle_root_cell.0.as_bytes()).unwrap(),
-                            merkle_root_cell.1,
-                        ))
-                        .build(),
-                    CellDep::new_builder()
-                        .out_point(OutPoint::new(
-                            Byte32::from_slice(ts_outpoint.as_bytes()).unwrap(),
-                            0,
-                        ))
-                        .dep_type(DepType::Code.into())
-                        .build(),
-                ],
-            )
-            .with_context(|| anyhow!("Failed to send signature for {}", idx + 1))?;
-        log::info!("Sended signature {}", idx + 1);
+    let mut expected_vote_result = HashMap::<[u8; 4], usize>::default();
+    for entry in voted_target.iter() {
+        *expected_vote_result.entry(entry.candidate_id).or_insert(0) += 1;
     }
-    let vote_result_string_as_key = vote_result
+    let sqrt_n = (keys.len() as f64).sqrt() as usize;
+    struct ChunkedVoteTarget {
+        vote_targets: Vec<VoteData>,
+        address: Address,
+        required_ckb: u64,
+        publisher: CellPublisher,
+    }
+
+    // Part vote entries into sqrt_n groups, each group with a new account
+    let chunked_vote_target_with_account = {
+        let done_count = AtomicUsize::new(0);
+        voted_target
+            .chunks(sqrt_n)
+            .par_bridge()
+            .map(|chunk| {
+                let mut rng = rand::thread_rng();
+                // Create a new keypair
+                let (secret_key, public_key) =
+                    secp256k1::Secp256k1::new().generate_keypair(&mut rng);
+                let required_ckb = chunk
+                    .iter()
+                    .map(|x| x.vote_cell_data.len() as u64 + 62 + 200)
+                    .sum();
+                log::info!(
+                    "Account generated: {}",
+                    done_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                );
+                let address = Address::new(
+                    ckb_sdk::NetworkType::Dev,
+                    AddressPayload::from_pubkey(&public_key),
+                    true,
+                );
+                ChunkedVoteTarget {
+                    address: address.clone(),
+                    required_ckb,
+                    vote_targets: chunk.to_vec(),
+                    publisher: CellPublisher::new(&address, secret_key, &args.rpc_url),
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut transfer_txs = HashSet::new();
+    // Send some money to each account
+    for (
+        index,
+        ChunkedVoteTarget {
+            address,
+            required_ckb,
+            vote_targets: _,
+            publisher: _,
+        },
+    ) in chunked_vote_target_with_account.iter().enumerate()
+    {
+        let (tx, _) = publisher
+            .publish_bytes_cell(
+                &[],
+                address,
+                None,
+                None,
+                vec![],
+                Some(*required_ckb * ONE_CKB),
+            )
+            .with_context(|| anyhow!("Failed to send balance to publisher account {}", index))?;
+        log::info!(
+            "Sended CKB {} to index {}, address {}",
+            required_ckb,
+            index,
+            address
+        );
+        transfer_txs.insert(tx);
+    }
+    {
+        let client = CkbRpcClient::new(&args.rpc_url);
+        log::info!("Waiting for transactions to be confirmed..");
+        while !transfer_txs.is_empty() {
+            let top = transfer_txs.iter().next().unwrap().clone();
+            let result = client
+                .get_only_committed_transaction_status(top.clone())
+                .with_context(|| anyhow!("Failed to fetch transaction status for {}", top))?;
+            match result.tx_status.status {
+                Status::Committed => {
+                    log::info!(
+                        "{} has been commited, remaining {}",
+                        top,
+                        transfer_txs.len()
+                    );
+                    transfer_txs.remove(&top);
+                }
+                s => {
+                    log::debug!("{} has not been commited, current status: {:?}", top, s);
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+        }
+    }
+    let total_count = AtomicUsize::new(0);
+    chunked_vote_target_with_account
+        .into_par_iter()
+        .enumerate()
+        .for_each(
+            |(
+                index,
+                ChunkedVoteTarget {
+                    vote_targets,
+                    address: _,
+                    required_ckb: _,
+                    mut publisher,
+                },
+            )| {
+                let total_len = vote_targets.len();
+                for (vote_idx, target) in vote_targets.into_iter().enumerate() {
+                    publisher
+                        .publish_bytes_cell(
+                            &target.vote_cell_data,
+                            &admin_addr,
+                            Some(&target.witness_data),
+                            Some((ts_code_hash.clone(), ScriptHashType::Data1)),
+                            vec![
+                                CellDep::new_builder()
+                                    .out_point(OutPoint::new(
+                                        Byte32::from_slice(candidate_cell.0.as_bytes()).unwrap(),
+                                        candidate_cell.1,
+                                    ))
+                                    .build(),
+                                CellDep::new_builder()
+                                    .out_point(OutPoint::new(
+                                        Byte32::from_slice(merkle_root_cell.0.as_bytes()).unwrap(),
+                                        merkle_root_cell.1,
+                                    ))
+                                    .build(),
+                                CellDep::new_builder()
+                                    .out_point(OutPoint::new(
+                                        Byte32::from_slice(ts_outpoint.as_bytes()).unwrap(),
+                                        0,
+                                    ))
+                                    .dep_type(DepType::Code.into())
+                                    .build(),
+                            ],
+                            None,
+                        )
+                        .unwrap();
+                    log::info!(
+                        "Worker {} sended transaction {}/{} (total {}/{})",
+                        index,
+                        vote_idx,
+                        total_len,
+                        total_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                        keys.len()
+                    );
+                }
+            },
+        );
+    let vote_result_string_as_key = expected_vote_result
         .into_iter()
         .map(|(key, val)| (format!("{:08X}", u32::from_le_bytes(key)), val))
         .collect::<HashMap<_, _>>();
     println!(
-        "Merkle tree root cell: {}:{}",
+        "Merkle tree root cell: 0x{}:{}",
         merkle_root_cell.0, merkle_root_cell.1
     );
-    println!("Candidate cell: {}:{}", candidate_cell.0, candidate_cell.1);
+    println!(
+        "Candidate cell: 0x{}:{}",
+        candidate_cell.0, candidate_cell.1
+    );
     println!(
         "{}",
         serde_json::to_string(&vote_result_string_as_key)
