@@ -34,6 +34,7 @@ use rayon::iter::{
     ParallelIterator,
 };
 use rsa::RsaPrivateKey;
+use secp256k1::Secp256k1;
 use signature_tools::{
     candidate::{encode_candidate_cell, Candidate},
     check_size_and_write,
@@ -57,10 +58,7 @@ struct Args {
     #[arg(short = 'p')]
     /// secp256k1 private key of administrator
     administrator_private_key: String,
-    #[arg(short = 'a')]
-    /// Account address of administrator
-    administrator_address: String,
-    #[arg(default_value_t=String::from("http://127.0.0.1:9000"))]
+    #[arg(default_value_t=String::from("http://127.0.0.1:8114"))]
     /// URL of rpc server
     rpc_url: String,
     #[arg(long,default_value_t=String::from("0xe3067794f05a9f1fa716bd28dd703f99cdf174492ade183331cc7882aca85919"))]
@@ -289,8 +287,14 @@ fn main() -> anyhow::Result<()> {
             .as_bytes(),
     )?;
     log::debug!("admin_private_key={:#?}", admin_private_key);
-    let admin_addr = Address::from_str(&args.administrator_address)
-        .map_err(|e| anyhow!("Failed to parse administrator address: {}", e))?;
+    let admin_addr = {
+        let ctx = Secp256k1::new();
+        Address::new(
+            ckb_sdk::NetworkType::Dev,
+            AddressPayload::from_pubkey(&admin_private_key.public_key(&ctx)),
+            true,
+        )
+    };
     log::debug!("admin_address={:#?}", admin_addr);
     let ts_code_hash = H256::from_str(&args.typescript_code_hash[2..])
         .with_context(|| anyhow!("Failed to parse typescript code hash"))?;
@@ -509,7 +513,7 @@ fn main() -> anyhow::Result<()> {
     chunked_vote_target_with_account
         .into_par_iter()
         .enumerate()
-        .for_each(
+        .try_for_each(
             |(
                 index,
                 ChunkedVoteTarget {
@@ -518,7 +522,8 @@ fn main() -> anyhow::Result<()> {
                     required_ckb: _,
                     mut publisher,
                 },
-            )| {
+            )|
+             -> anyhow::Result<()> {
                 let total_len = vote_targets.len();
                 for (vote_idx, target) in vote_targets.into_iter().enumerate() {
                     publisher
@@ -550,18 +555,19 @@ fn main() -> anyhow::Result<()> {
                             ],
                             None,
                         )
-                        .unwrap();
+                        .with_context(|| anyhow!("Failed to send transaction"))?;
                     log::info!(
                         "Worker {} sended transaction {}/{} (total {}/{})",
                         index,
                         vote_idx,
                         total_len,
-                        total_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                        total_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1,
                         keys.len()
                     );
                 }
+                Ok(())
             },
-        );
+        )?;
     let vote_result_string_as_key = expected_vote_result
         .into_iter()
         .map(|(key, val)| (format!("{:08X}", u32::from_le_bytes(key)), val))

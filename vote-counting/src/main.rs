@@ -36,7 +36,7 @@ struct Args {
     #[arg(long = "tx", short = 't')]
     signature_verify_type_script_hash: String,
     // URL of ckb node
-    #[arg(default_value_t=String::from("http://127.0.0.1:9000"))]
+    #[arg(default_value_t=String::from("http://127.0.0.1:8114"))]
     rpc_url: String,
 }
 
@@ -73,7 +73,7 @@ impl VoteValidator {
         if self.merkle_tree_root_cell_tx.0 != cell_dep_2.out_point.tx_hash
             || self.merkle_tree_root_cell_tx.1 != cell_dep_2.out_point.index.value()
         {
-            bail!("Bad public key cell");
+            bail!("Bad merkle tree root cell");
         }
         let vote_cell_data = &tx
             .outputs_data
@@ -194,7 +194,7 @@ fn main() -> anyhow::Result<()> {
                         .validate_tx(&tx)
                         .with_context(|| anyhow!("Failed to verify tx"))
                     {
-                        log::warn!("Bad tx encountered: {:?}", e);
+                        log::debug!("Bad tx encountered: {:?}", e);
                         return Ok(None);
                     }
                     let vote_cell = tx
